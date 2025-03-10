@@ -89,168 +89,6 @@ Be aware that there may be nil values."
     )
   buf)
 
-(defvar oboe--buffers (make-hash-table)
-  "A hashmap to record backward reference from buffer to its class.
-Each key is a buffer.
-Each value is a config symbol.")
-
-(defvar oboe--classes (make-hash-table)
-  "A hashmap to record all living oboe buffers.
-Each key is a config symbol.
-Each value is a list (COUNTER BUF1 BUF2 ...) where
-COUNTER is the accumulated value of buffers.")
-
-(defun oboe-register-buffer (config buffer-or-name)
-  "Register BUFFER-OR-NAME with CONFIG to `oboe--classes'."
-  (cond
-   ((or (bufferp buffer-or-name)
-        (stringp buffer-or-name))
-    (let ((class (plist-get config :name))
-          (buf (get-buffer buffer-or-name)))
-      ;; register buffer to buffer list of this class
-      (let ((buffers
-             (or (gethash class oboe--classes)
-                 (puthash class (list 0) oboe--classes))))
-        (setcdr buffers (cons buf (cdr buffers))))
-      ;; keep backward reference
-      (puthash buf class oboe--buffers)
-      ))
-   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))
-   ))
-
-(defun oboe-unregister-buffer (buffer-or-name)
-  "Unregister BUFFER-OR-NAME from `oboe--classes'."
-  (cond
-   ((or (bufferp buffer-or-name)
-        (stringp buffer-or-name))
-    (let* ((buf (get-buffer buffer-or-name))
-           (class (gethash buf oboe--buffers)))
-      (when class
-        (progn
-          ;; remove buf from buffer list of this class
-          (let ((buffers (gethash class oboe--classes)))
-            (when buffers
-              (setcdr buffers (delq buf (cdr buffers)))
-              ))
-          ;; remove backward reference to release the buffer
-          (remhash buf oboe--buffers)
-          ))
-      ))
-   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))
-   ))
-
-(defun oboe-make-buffer-name (config)
-  "Return a buffer name string according to CONFIG.
-
-We use an accumulator counter to assign unique value for temporary buffers.
-Theoretically it won't overflow for normal usage."
-  (let* ((class (plist-get config :name))
-         (buffers (or (gethash class oboe--classes)
-                      (puthash class (list 0) oboe--classes))))
-    ;; update accumulator to make sure buffer id ever repeats
-    (puthash class (cons (1+ (car buffers)) (cdr buffers))
-             oboe--classes)
-    ;; use old id before update
-    (format "*oboe:%s<%d>*" (symbol-name class) (car buffers))))
-
-(defcustom oboe-default-temp-file-dir
-  (concat user-emacs-directory "tmp/")
-  "Default directory to store temporary oboe file."
-  :type 'directory
-  :group 'oboe)
-
-(defun oboe-make-file-name (config)
-  "Return a file name string according to CONFIG."
-  (let ((temp-file-dir
-         (or (file-directory-p
-              (plist-get config :temp-file-dir))
-             oboe-default-temp-file-dir
-             "/tmp")))
-    (make-temp-file
-     (format "%s%s-"
-             (file-name-as-directory temp-file-dir)
-             (current-time-string)))))
-
-(defcustom oboe-default-create-method
-  (lambda (config)
-    (if (plist-get config :has-temp-file)
-        (find-file-noselect (oboe-make-file-name config))
-      (get-buffer-create (oboe-make-buffer-name config))))
-  "Default method to create a oboe buffer."
-  :type 'function
-  :group 'oboe)
-
-(defun oboe-make-buffer (config)
-  "Create a temporary buffer according to CONFIG."
-  (let* ((creator
-          (or (plist-get config :create)
-              oboe-default-create-method))
-         (buf (funcall creator config)))
-    (with-current-buffer buf
-      (add-hook 'kill-buffer-hook
-                (lambda () (oboe-unregister-buffer (current-buffer))))
-      (oboe-register-buffer config buf)
-      (oboe-load config buf))))
-
-(defcustom oboe-default-display-method
-  'switch-to-buffer
-  "Default method to display newly created oboe buffer."
-  :type 'function
-  :group 'oboe)
-
-(defun oboe-create-buffer (config)
-  "Create a temporary buffer according to CONFIG."
-  (let ((buf (oboe-make-buffer config)))
-    (when buf
-      (let ((display-method
-             (or (plist-get config :display)
-                 oboe-default-display-method)))
-        (if display-method
-            (funcall display-method buf)
-          (error "No available method to display buffer!"))
-    ))))
-
-(defun oboe-find-last-buffer (config)
-  "Find the last buried buffer with CONFIG."
-  (let ((matches (cdr (gethash (plist-get config :name)
-                               oboe--classes)))
-        (buffers (cdr (buffer-list)))
-        (found nil))
-    ;; loop through buffer-list and check if it's with CONFIG
-    (while buffers
-      (let ((buf (car buffers)))
-        (when (and (buffer-live-p buf)
-                   (member buf matches))
-          (setq found buf
-                buffers nil))
-        (setq buffers (cdr buffers))))
-    ;; if no buffer found, simply create a new one
-    (setq found (or found (oboe-make-buffer config)))))
-
-(defun oboe-revive-last-buffer (config)
-  "Find and display last buried buffer with CONFIG."
-  (let ((display-method
-         (or (plist-get config :display)
-             oboe-default-display-method)))
-    (if display-method
-        (funcall display-method
-                 (oboe-find-last-buffer config)))))
-
-(defcustom oboe-default-revive-method
-  'oboe-revive-last-buffer
-  "Default method to revive created oboe buffer."
-  :type 'function
-  :group 'oboe)
-
-(defun oboe-recall-buffer (config)
-  "Compose a temporary from existing buffers with CONFIG."
-  (let ((revive-method
-         (or (plist-get config :revive)
-             oboe-default-revive-method)))
-    (if revive-method
-        (funcall revive-method config)
-      (error "No available method to revive buffer!"))))
-
 (defcustom oboe-config-alist
   (list
    `(elisp
@@ -305,17 +143,185 @@ functions, everything in elisp as your wish."
                       :value-type (plist :value-type sexp)))
   :group 'oboe)
 
+(defvar oboe--buffers (make-hash-table)
+  "A hashmap to record backward reference from buffer to its class.
+Each key is a buffer.
+Each value is a config symbol.")
+
+(defvar oboe--classes (make-hash-table)
+  "A hashmap to record all living oboe buffers.
+Each key is a config symbol.
+Each value is a list (COUNTER BUF1 BUF2 ...) where
+COUNTER is the accumulated value of buffers.")
+
+(defun oboe-register-buffer (config buffer-or-name)
+  "Register BUFFER-OR-NAME with CONFIG to `oboe--classes'."
+  (cond
+   ((or (bufferp buffer-or-name)
+        (stringp buffer-or-name))
+    (let ((class (plist-get config :name))
+          (buf (get-buffer buffer-or-name)))
+      ;; register buffer to buffer list of this class
+      (let ((buffers
+             (or (gethash class oboe--classes)
+                 (puthash class (list 0) oboe--classes))))
+        (setcdr buffers (cons buf (cdr buffers))))
+      ;; keep backward reference
+      (puthash buf class oboe--buffers)
+      ))
+   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))
+   ))
+
+(defun oboe-unregister-buffer (buffer-or-name)
+  "Unregister BUFFER-OR-NAME from `oboe--classes'."
+  (cond
+   ((or (bufferp buffer-or-name)
+        (stringp buffer-or-name))
+    (let* ((buf (get-buffer buffer-or-name))
+           (class (gethash buf oboe--buffers)))
+      (when class
+        (progn
+          ;; remove buf from buffer list of this class
+          (let ((buffers (gethash class oboe--classes)))
+            (when buffers
+              (setcdr buffers (delq buf (cdr buffers)))
+              ))
+          ;; remove backward reference to release the buffer
+          (remhash buf oboe--buffers)
+          ))
+      ))
+   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))
+   ))
+
+(defcustom oboe-default-display-method
+  'switch-to-buffer
+  "Default method to display newly created oboe buffer."
+  :type 'function
+  :group 'oboe)
+
+(defun oboe-display-buffer (buffer)
+  "Display a temporary BUFFER according to CONFIG.
+BUFFER must be a valid oboe buffer."
+  (let* ((config
+          (or (alist-get
+               (gethash (or buffer (error "Invalid buffer!"))
+                        oboe--buffers)
+               oboe-config-alist)
+              (error "No config found for buffer!")))
+         (display-method
+          (or (plist-get config :display)
+              oboe-default-display-method
+              (error "No available display method!"))))
+    (funcall display-method buffer)
+    ))
+
+(defun oboe-make-buffer-name (config)
+  "Return a buffer name string according to CONFIG.
+
+We use an accumulator counter to assign unique value for temporary buffers.
+Theoretically it won't overflow for normal usage."
+  (let* ((class (plist-get config :name))
+         (buffers (or (gethash class oboe--classes)
+                      (puthash class (list 0) oboe--classes))))
+    ;; update accumulator to make sure buffer id ever repeats
+    (puthash class (cons (1+ (car buffers)) (cdr buffers))
+             oboe--classes)
+    ;; use old id before update
+    (format "*oboe:%s<%d>*" (symbol-name class) (car buffers))))
+
+(defcustom oboe-default-temp-file-dir
+  (concat user-emacs-directory "tmp/")
+  "Default directory to store temporary oboe file.
+Temporary files won't be deleted, take care of them."
+  :type 'directory
+  :group 'oboe)
+
+(defun oboe-make-file-name (config)
+  "Return a file name string according to CONFIG."
+  (let ((temp-file-dir
+         (or (let ((dir (plist-get config :temp-file-dir)))
+               (when (file-directory-p dir) dir))
+             oboe-default-temp-file-dir
+             "/tmp")))
+    ;; `make-temp-file' ensures no duplicate files generated.
+    (make-temp-file
+     (format "%s%s-"
+             (file-name-as-directory temp-file-dir)
+             (current-time-string)))))
+
+(defcustom oboe-default-create-method
+  (lambda (config)
+    (if (plist-get config :has-temp-file)
+        (find-file-noselect (oboe-make-file-name config))
+      (get-buffer-create (oboe-make-buffer-name config))))
+  "Default method to create a oboe buffer."
+  :type 'function
+  :group 'oboe)
+
+(defun oboe-make-buffer (config)
+  "Create a temporary buffer according to CONFIG."
+  (let* ((creator
+          (or (plist-get config :create)
+              oboe-default-create-method))
+         (buf (funcall creator config)))
+    (with-current-buffer buf
+      (add-hook 'kill-buffer-hook
+                (lambda () (oboe-unregister-buffer (current-buffer))))
+      (oboe-register-buffer config buf)
+      (oboe-load config buf))))
+
+(defun oboe-find-last-buffer (config)
+  "Find the last buried buffer with CONFIG."
+  (let ((matches (cdr (gethash (plist-get config :name)
+                               oboe--classes)))
+        (buffers (cdr (buffer-list)))
+        (found nil))
+    ;; loop through buffer-list and check if it's with CONFIG
+    (while buffers
+      (let ((buf (car buffers)))
+        (when (and (buffer-live-p buf)
+                   (member buf matches))
+          (setq found buf
+                buffers nil))
+        (setq buffers (cdr buffers))))
+    ;; if no buffer found, simply create a new one
+    (setq found (or found (oboe-make-buffer config)))))
+
+(defun oboe-revive-last-buffer (config)
+  "Find and display last buried buffer with CONFIG."
+  (let ((display-method
+         (or (plist-get config :display)
+             oboe-default-display-method)))
+    (if display-method
+        (funcall display-method
+                 (oboe-find-last-buffer config)))))
+
+(defcustom oboe-default-revive-method
+  'oboe-revive-last-buffer
+  "Default method to revive created oboe buffer."
+  :type 'function
+  :group 'oboe)
+
+(defun oboe-recall-buffer (config)
+  "Compose a temporary from existing buffers with CONFIG."
+  (let ((revive-method
+         (or (plist-get config :revive)
+             oboe-default-revive-method)))
+    (if revive-method
+        (funcall revive-method config)
+      (error "No available method to revive buffer!"))))
+
 ;;;###autoload
 (defun oboe-new (config-name)
   "Create a temporary buffer by selecting CONFIG-NAME interactively."
   (interactive
    (list
-    (completing-read
-     "Create a temporary buffer with config: "
-     oboe-config-alist)))
+    (completing-read "Create a temporary buffer with config: "
+                     oboe-config-alist)))
   (let ((config (assoc (intern config-name) oboe-config-alist)))
     (if config
-        (oboe-create-buffer (cons :name config))
+        (oboe-display-buffer
+         (oboe-make-buffer (cons :name config)))
       (error "Unknown config name %s" config-name))))
 
 ;;;###autoload
@@ -323,12 +329,44 @@ functions, everything in elisp as your wish."
   "Recall a temporary buffer by selecting CONFIG-NAME interactively."
   (interactive
    (list
-    (completing-read
-     "Revive a temporary buffer with config: "
-     oboe-config-alist)))
+    (completing-read "Revive a temporary buffer with config: "
+                     oboe-config-alist)))
   (let ((config (assoc (intern config-name) oboe-config-alist)))
     (if config
-        (oboe-recall-buffer (cons :name config)))))
+        (oboe-display-buffer
+         (oboe-recall-buffer (cons :name config))))))
+
+;;;###autoload
+(defun oboe-absorb (config-name &optional buffers)
+  "Absorb selected BUFFERS into a temporary buffer of CONFIG-NAME.
+You can absorb on one buffer for multiple times."
+  (interactive
+   (list
+    (completing-read "Create a temporary buffer with config: "
+                     oboe-config-alist)
+    (mapcar
+     'get-buffer
+     (completing-read-multiple
+      "Absorb buffer(s): "
+      (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))))
+  (let* ((config (assoc (intern config-name) oboe-config-alist))
+         (newbuf (oboe-make-buffer (cons :name config))))
+    (with-current-buffer newbuf
+      (dolist (in buffers)
+        (insert-buffer-substring in)))
+    (oboe-display-buffer newbuf)))
+
+;;;###autoload
+(defun oboe-branch (buffer)
+  "Clone a temporary BUFFER, just like `clone-buffer'."
+  (interactive
+   (list (completing-read "Branch from a temporary buffer: "
+                          (maphash (lambda (k _) k) oboe--buffers))))
+  (let* ((config (assoc (gethash buffer oboe--buffers) oboe-config-alist))
+         (newbuf (oboe-make-buffer (cons :name config))))
+    (with-current-buffer newbuf
+      (insert-buffer-substring buffer))
+    (oboe-display-buffer newbuf)))
 
 ;;;###autoload
 (defun oboe-menu (config-names)

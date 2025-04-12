@@ -349,6 +349,13 @@ If universal argument NO-SELECT is given, do not select CONFIG."
            (cons :name config)
          (error "Unknown config name %s" config-name))))))
 
+(defcustom oboe-default-absorb-method
+  'insert-buffer-substring
+  "How `oboe-absorb' insert captured text to created buffer.
+It should have the same arguments with `insert-buffer-substring'"
+  :type 'function
+  :group 'oboe)
+
 ;;;###autoload
 (defun oboe-absorb (buffers &optional region-only)
   "Absorb selected BUFFERS into a temporary buffer.
@@ -372,7 +379,7 @@ P. S.  You can absorb on one buffer for multiple times."
                             (list (region-beginning)
                                   (region-end))))))))
         (with-current-buffer buf
-          (apply #'insert-buffer-substring args))))
+          (apply oboe-default-absorb-method args))))
     (oboe-display-buffer buf)
     buf))
 

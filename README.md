@@ -34,8 +34,7 @@ actually not clearer with CL, so I just abandoned using cl-lib.
 Currently we have commands: (if you have any good ideas, please tell me!)
 - `oboe-new` creates a new temporary buffer.
 - `oboe-recall` brings back a temporary buffer.
-- `oboe-absorb` absorbs content from multiple temporary buffers.
-- `oboe-branch` clones a temporary buffer.
+- `oboe-absorb` absorbs content from multiple buffers.
 - `oboe-menu` filters out temporary buffers in a buffer menu.
 
 I think we may do more in the future, for example, merge two buffers,

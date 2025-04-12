@@ -42,6 +42,30 @@ continue from an exist buffer like snapshots ... After all, temporary
 buffers construct almost everything in high-level text edit control,
 e. g. undo, redo, copy, concatenation, etc.
 
+One example of using `oboe-absorb`:
+
+``` emacs-lisp
+  (use-package ibuffer
+    :commands (ibuffer)
+    :init
+    (defun ibuffer-oboe-absorb ()
+      "Absorb marked buffers into an OBOE temporary buffer."
+      (interactive)
+      (oboe-absorb (ibuffer-get-marked-buffers)))
+
+    :bind
+    (:map ibuffer-mode-map
+          ("a" . ibuffer-oboe-absorb))
+    )
+```
+
+This is useful when you want to create a temporary view of marked
+buffers. `ibuffer` provides various filtering functions so it will be
+very enjoyable to have this function added.
+
+
+## Customization
+
 This simple framework is designed to be tweaked easily. The basic
 concept is that, a temporary buffer class is defined by a plist, e. g.
 

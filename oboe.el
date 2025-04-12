@@ -47,6 +47,8 @@
 
 ;;; Code:
 
+(require 'subr-x)
+
 (defgroup oboe nil
   "A simple temporary buffer management framework."
   :group 'convenience)
@@ -206,8 +208,7 @@ BUFFER must be a valid oboe buffer."
           (or (alist-get
                (gethash (or buffer (error "Invalid buffer!"))
                         oboe--buffers)
-               oboe-config-alist)
-              (error "No config found for buffer!")))
+               oboe-config-alist)))
          (display-method
           (or (plist-get config :display)
               oboe-default-display-method
@@ -270,13 +271,15 @@ Temporary files won't be deleted, take care of them."
       (oboe-register-buffer config buf)
       (oboe-load config buf))))
 
-(defun oboe-find-last-buffer (config)
-  "Find the last buried buffer with CONFIG."
-  (let ((matches (cdr (gethash (plist-get config :name)
-                               oboe--classes)))
+(defun oboe-find-last-buffer (&optional config)
+  "Find the last buried buffer with CONFIG.
+If CONFIG is nil, find one from all oboe buffers."
+  (let ((matches (or (cdr (gethash (plist-get config :name)
+                                   oboe--classes))
+                     (hash-table-keys oboe--buffers)))
         (buffers (cdr (buffer-list)))
         (found nil))
-    ;; loop through buffer-list and check if it's with CONFIG
+    ;; loop through buffers and check if it's with CONFIG
     (while buffers
       (let ((buf (car buffers)))
         (when (and (buffer-live-p buf)
@@ -284,17 +287,21 @@ Temporary files won't be deleted, take care of them."
           (setq found buf
                 buffers nil))
         (setq buffers (cdr buffers))))
-    ;; if no buffer found, simply create a new one
-    (setq found (or found (oboe-make-buffer config)))))
+    ;; if no buffer found, simply print a hint
+    (unless found
+      (message "No matched living oboe buffer found!"))
+    found))
 
-(defun oboe-revive-last-buffer (config)
-  "Find and display last buried buffer with CONFIG."
+(defun oboe-revive-last-buffer (&optional config)
+  "Find and display last buried buffer with CONFIG.
+The behavior is user-defined when CONFIG is nil."
   (let ((display-method
          (or (plist-get config :display)
              oboe-default-display-method)))
     (if display-method
-        (funcall display-method
-                 (oboe-find-last-buffer config)))))
+        (let ((buffer (oboe-find-last-buffer config)))
+          (when buffer
+            (funcall display-method buffer))))))
 
 (defcustom oboe-default-revive-method
   'oboe-revive-last-buffer
@@ -302,7 +309,7 @@ Temporary files won't be deleted, take care of them."
   :type 'function
   :group 'oboe)
 
-(defun oboe-recall-buffer (config)
+(defun oboe-recall-buffer (&optional config)
   "Compose a temporary from existing buffers with CONFIG."
   (let ((revive-method
          (or (plist-get config :revive)
@@ -320,53 +327,54 @@ Temporary files won't be deleted, take care of them."
                      oboe-config-alist)))
   (let ((config (assoc (intern config-name) oboe-config-alist)))
     (if config
-        (oboe-display-buffer
-         (oboe-make-buffer (cons :name config)))
+        (let ((buffer (oboe-make-buffer (cons :name config))))
+          (oboe-display-buffer buffer)
+          buffer)
       (error "Unknown config name %s" config-name))))
 
 ;;;###autoload
-(defun oboe-recall (config-name)
-  "Recall a temporary buffer by selecting CONFIG-NAME interactively."
+(defun oboe-recall (config-name &optional no-select)
+  "Recall a temporary buffer by selecting CONFIG-NAME interactively.
+If universal argument NO-SELECT is given, do not select CONFIG."
   (interactive
    (list
-    (completing-read "Revive a temporary buffer with config: "
-                     oboe-config-alist)))
-  (let ((config (assoc (intern config-name) oboe-config-alist)))
-    (if config
-        (oboe-display-buffer
-         (oboe-recall-buffer (cons :name config))))))
+    (unless current-prefix-arg
+      (completing-read "Revive a temporary buffer with config: "
+                       oboe-config-alist))
+    current-prefix-arg))
+  (oboe-recall-buffer
+   (unless no-select
+     (let ((config (assoc (intern config-name) oboe-config-alist)))
+       (if config
+           (cons :name config)
+         (error "Unknown config name %s" config-name))))))
 
 ;;;###autoload
-(defun oboe-absorb (config-name &optional buffers)
-  "Absorb selected BUFFERS into a temporary buffer of CONFIG-NAME.
-You can absorb on one buffer for multiple times."
+(defun oboe-absorb (buffers &optional region-only)
+  "Absorb selected BUFFERS into a temporary buffer.
+If a universal argument as REGION-ONLY is given, only absorb active
+regions is selected buffers.  Otherwise, absorb the whole buffer.
+P. S.  You can absorb on one buffer for multiple times."
   (interactive
    (list
-    (completing-read "Create a temporary buffer with config: "
-                     oboe-config-alist)
     (mapcar
      'get-buffer
      (completing-read-multiple
       "Absorb buffer(s): "
-      (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))))
-  (let* ((config (assoc (intern config-name) oboe-config-alist))
-         (newbuf (oboe-make-buffer (cons :name config))))
-    (with-current-buffer newbuf
-      (dolist (in buffers)
-        (insert-buffer-substring in)))
-    (oboe-display-buffer newbuf)))
-
-;;;###autoload
-(defun oboe-branch (buffer)
-  "Clone a temporary BUFFER, just like `clone-buffer'."
-  (interactive
-   (list (completing-read "Branch from a temporary buffer: "
-                          (maphash (lambda (k _) k) oboe--buffers))))
-  (let* ((config (assoc (gethash buffer oboe--buffers) oboe-config-alist))
-         (newbuf (oboe-make-buffer (cons :name config))))
-    (with-current-buffer newbuf
-      (insert-buffer-substring buffer))
-    (oboe-display-buffer newbuf)))
+      (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))
+    current-prefix-arg))
+  (let ((buf (call-interactively 'oboe-new)))
+    (dolist (in buffers)
+      (let ((args
+             (cons in (when region-only
+                        (with-current-buffer in
+                          (when (use-region-p)
+                            (list (region-beginning)
+                                  (region-end))))))))
+        (with-current-buffer buf
+          (apply #'insert-buffer-substring args))))
+    (oboe-display-buffer buf)
+    buf))
 
 ;;;###autoload
 (defun oboe-menu (config-names)
@@ -383,7 +391,7 @@ You can absorb on one buffer for multiple times."
     (switch-to-buffer
      (list-buffers-noselect
       nil
-      (maphash (lambda (k _) k) oboe--buffers)
+      (hash-table-keys oboe--buffers)
       (lambda (buf)
         (member (gethash buf oboe--buffers) config-list))))))
 

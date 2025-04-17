@@ -80,28 +80,35 @@ concept is that, a temporary buffer class is defined by a plist, e. g.
 
 I have implemented these keys:
 
-`:create` : A function to create the buffer.  Its default value is
+- `:create` : A function to create the buffer.  Its default value is
 `oboe-default-create-method`.  Normally you don't need to tweak it.
 
-`:display` : A function to display given buffer.  Its default value
+- `:display` : A function to display given buffer.  Its default value
 is `oboe-default-display-method`.
 
-`:has-temp-file` : A flag which indicates if a temporary file with be
-created, if non-nil, open a temporary file for this buffer.
+- `:assoc-file` : A path as a string.  This allows us to associate
+temporary buffers to files to solve some path env problems when
+loading a project-wide major-mode.  It can also be used for creating
+persistent storage.
+  - If it is a regular file, all buffers created will be associated to
+this file.  This file will never be truncated.
+  - If it is a directory, a unique temporary file will be created in
+that directory for each new oboe buffer to be associated to.  These
+files may be deleted when associated buffers are killed.  You can
+control this behavior via toggle `oboe-delete-temp-file-on-kill`.
+  - If it is nil (default) or anything else, do not associate
+temporary buffer to file.
 
-`:tmp-file-path` : A path string to a valid path, if `:has-tmp-file` is
-non-nil, the temporary file will be created in that directory.  This
-solves some path env problems when loading a project-wide major-mode.
+- `:major` : Major mode to be loaded in the buffer.  Actually, it
+doesn't need to be a major-mode at all, just a function to be called
+once.
 
-`:major` : Major mode to be loaded in the buffer.  Actually, it doesn't
-need to be a major-mode at all, just a function to be called once.
+- `:minor-list` : A list of minor-modes to be loaded in the buffer.
+The order of minor-mode calls is determined by `mapc`.
 
-`:minor-list` : A list of minor-modes to be loaded in the buffer.  The
-order of minor-mode calls is determined by `mapc`.
+- `:init-content` : A string to be inserted into the buffer.
 
-`:init-content` : A string to be inserted into the buffer.
-
-`:revive` : A function to find and display a buried buffer with
+- `:revive` : A function to find and display a buried buffer with
 given config.  This function works on a specific buffer config
 rather than a specific buffer, so you can choose which buffer to
 revive, even concat all existing buffers.  Its default value is

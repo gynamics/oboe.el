@@ -117,12 +117,18 @@ Keys:
 :display : A function to display given buffer.  Its default value
 is `oboe-default-display-method'.
 
-:has-temp-file : A flag which indicates if a temporary file with be
-created, if non-nil, open a temporary file for this buffer.
-
-:tmp-file-path : A path string to a valid path, if `:has-tmp-file' is
-non-nil, the temporary file will be created in that directory.  This
-solves some path env problems when loading a project-wide major-mode.
+:assoc-file : A path as a string.  This allows us to associate temporary
+buffers to files to solve some path env problems when loading a
+project-wide major-mode.  It can also be used for creating persistent
+storage.
+  - If it is a regular file, all buffers created will be associated to
+this file.  This file will never be truncated.
+  - If it is a directory, a unique temporary file will be created in
+that directory for each new oboe buffer to be associated to.  These
+files may be deleted when associated buffers are killed.  You can
+control this behavior via toggle `oboe-delete-temp-file-on-kill`.
+  - If it is nil (default) or anything else, do not associate temporary
+buffer to file.
 
 :major : Major mode to be loaded in the buffer.  Actually, it doesn't
 need to be a major-mode at all, just a function to be called once.
@@ -230,31 +236,28 @@ Theoretically it won't overflow for normal usage."
     ;; use old id before update
     (format "*oboe:%s<%d>*" (symbol-name class) (car buffers))))
 
-(defcustom oboe-default-temp-file-dir
-  (concat user-emacs-directory "tmp/")
-  "Default directory to store temporary oboe file.
-Temporary files won't be deleted, take care of them."
-  :type 'directory
+(defcustom oboe-delete-temp-file-on-kill t
+  "Whether delete associated temp file when kill a oboe buffer."
+  :type 'boolean
   :group 'oboe)
-
-(defun oboe-make-file-name (config)
-  "Return a file name string according to CONFIG."
-  (let ((temp-file-dir
-         (or (let ((dir (plist-get config :temp-file-dir)))
-               (when (file-directory-p dir) dir))
-             oboe-default-temp-file-dir
-             "/tmp")))
-    ;; `make-temp-file' ensures no duplicate files generated.
-    (make-temp-file
-     (format "%s%s-"
-             (file-name-as-directory temp-file-dir)
-             (current-time-string)))))
 
 (defcustom oboe-default-create-method
   (lambda (config)
-    (if (plist-get config :has-temp-file)
-        (find-file-noselect (oboe-make-file-name config))
-      (get-buffer-create (oboe-make-buffer-name config))))
+    (let ((path (plist-get config :assoc-file)))
+      (cond
+       ((and (stringp path)
+             (file-regular-p path))
+        (find-file-noselect path))
+       ((and (stringp path)
+             (file-directory-p path))
+        (find-file-noselect
+         ;; `make-temp-file' ensures no duplicate files generated.
+         (make-temp-file
+          (format "%s%s-"
+                  (file-name-as-directory path)
+                  (current-time-string)))))
+       (t
+        (get-buffer-create (oboe-make-buffer-name config))))))
   "Default method to create a oboe buffer."
   :type 'function
   :group 'oboe)
@@ -267,7 +270,15 @@ Temporary files won't be deleted, take care of them."
          (buf (funcall creator config)))
     (with-current-buffer buf
       (add-hook 'kill-buffer-hook
-                (lambda () (oboe-unregister-buffer (current-buffer))))
+                (lambda ()
+                  (oboe-unregister-buffer (current-buffer))))
+      (when (and oboe-delete-temp-file-on-kill
+                 (file-directory-p (plist-get config :assoc-file)))
+        (add-hook 'kill-buffer-hook
+                  (lambda ()
+                    (delete-file (buffer-file-name))))
+        (make-local-variable 'kill-buffer-query-functions)
+        (setq kill-buffer-query-functions nil))
       (oboe-register-buffer config buf)
       (oboe-load config buf))))
 

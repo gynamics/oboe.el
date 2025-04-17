@@ -78,6 +78,28 @@ concept is that, a temporary buffer class is defined by a plist, e. g.
        ";; you can save it somewhere by pressing C-x C-w.\n"))
 ```
 
+You can add a new class `scratch` by:
+
+``` emacs-lisp
+    (add-to-list 'oboe-config-alist
+                 '(scratch
+                   :major emacs-lisp-mode
+                   :assoc-file (concat (user-emacs-directory)
+                                       "scratch-persistent"))
+                 ))
+    ;; create that associated file if it does not exist yet
+    (make-empty-file (concat (user-emacs-directory)
+                             "scratch-persistent"))
+
+```
+
+This adds a class named `scratch` to `oboe-config-alist`, which is
+associated to a specific file. When a buffer of this type created, it
+will be associated to file `~/.config/emacs/scratch-persistent`.
+
+`oboe-config-alist` is a custom variable which can be customized. You
+can alter its initial value with `custom-set-variables`.
+
 I have implemented these keys:
 
 - `:create` : A function to create the buffer.  Its default value is
@@ -123,11 +145,14 @@ just a brute way to implement generic functions.
 ``` text
     (f :key1 :key2 ... :keyN)
     + config
-    => (funcall 'f () (plist-get :key1 config)
-                      (plist-get :key2 config)
-                      ...
-                      (plist-get :keyN config))
+    => (funcall 'f (plist-get :key1 config)
+                   (plist-get :key2 config)
+                   ...
+                   (plist-get :keyN config))
 ```
 
-Actually there was a prototype CL style. But I just found that, that
-one was not simpler, so I just abandoned CL and chose plists.
+Be aware that `plist-get` may return `nil`, `oboe-use` won't check it
+for your function, so your function should be able to check them.
+
+Actually there was a prototype in CL style. But I just found that,
+that one was not simpler, so I just abandoned CL and chose plists.

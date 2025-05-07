@@ -273,7 +273,8 @@ Theoretically it won't overflow for normal usage."
                 (lambda ()
                   (oboe-unregister-buffer (current-buffer))))
       (when (and oboe-delete-temp-file-on-kill
-                 (file-directory-p (plist-get config :assoc-file)))
+                 (and-let* ((path (plist-get config :assoc-file)))
+                   (file-directory-p path)))
         (add-hook 'kill-buffer-hook
                   (lambda ()
                     (delete-file (buffer-file-name))))

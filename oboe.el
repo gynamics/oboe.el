@@ -105,8 +105,8 @@ Be aware that there may be nil values."
      (lambda (buffer)
        (split-window)
        (switch-to-buffer buffer)))
-   '(text
-     :major text-mode))
+   '(org :major org-mode)
+   '(text :major text-mode))
   "Alist of oboe config, each item value is a plist of key-value pairs.
 
 Keys:

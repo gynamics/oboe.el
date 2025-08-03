@@ -144,6 +144,9 @@ rather than a specific buffer, so you can choose which buffer to
 revive, even concat all existing buffers.  Its default value is
 `oboe-default-revive-method'.
 
+:return : A function to extract a value from current buffer to
+be provided for other usages.  For example, a `oboe-pipe'.
+
 These keys are just fine to construct a simple preset to make the
 whole system work.  You may extend this with your own loader
 functions, everything in elisp as your wish."
@@ -413,6 +416,65 @@ P. S.  You can absorb on one buffer for multiple times."
       (hash-table-keys oboe--buffers)
       (lambda (buf)
         (member (gethash buf oboe--buffers) config-list))))))
+
+(defcustom oboe-pipe-commit-keybinding "C-c C-c"
+  "Default keybinding for \\[oboe-pipe-commit] in an oboe pipe."
+  :type 'key-sequence
+  :group 'oboe)
+
+(defcustom oboe-pipe-abort-keybinding "C-c C-k"
+  "Default keybinding for \\[kill-buffer] in an oboe pipe."
+  :type 'key-sequence
+  :group 'oboe)
+
+(defcustom oboe-pipe-reset-keybinding "C-c C-r"
+  "Default keybinding to reselect command in an oboe pipe."
+  :type 'key-sequence
+  :group 'oboe)
+
+(defun oboe-pipe-commit (command ctxt-buf arg-buf)
+  "Commit ARG-BUF to COMMAND to be called in CTXT-BUF.
+ARG-BUF should be an oboe buffer."
+  (let* ((class (gethash arg-buf oboe--buffers))
+         (config (alist-get class oboe-config-alist))
+         (converter (or (plist-get config :return)
+                        'identity))
+         (arg (funcall converter arg-buf)))
+    (with-current-buffer ctxt-buf
+      (funcall command arg)))
+  (kill-buffer arg-buf))
+
+;;;###autoload
+(defun oboe-pipe (cmd)
+  "Create a temporary buffer for intermediate text editing.
+After editing that buffer, pipe buffer as the argument to CMD with
+`oboe-pipe-commit-keybinding' or abort it with
+`oboe-pipe-abort-keybinding'.  You can also reselect the command before
+commit with `oboe-pipe-reset-keybinding'."
+  (interactive "CCommand: ")
+  (let ((orig-buf (current-buffer)))
+    (let ((buf (call-interactively #'oboe-new))
+          (cmd cmd))
+      (with-current-buffer buf
+        (setq-local header-line-format
+                    (concat
+                     (format "Command: [%s] " cmd)
+                     "Commit: " (propertize "C-c C-c" 'face 'highlight)
+                     " Abort: " (propertize "C-c C-k" 'face 'highlight)
+                     " Reselect: " (propertize "C-c C-r" 'face 'highlight)))
+        (keymap-local-set oboe-pipe-commit-keybinding
+                          (lambda ()
+                            (interactive)
+                            (oboe-pipe-commit cmd orig-buf buf)))
+        (keymap-local-set oboe-pipe-abort-keybinding
+                          (lambda ()
+                            (interactive)
+                            (kill-buffer buf)))
+        (keymap-local-set oboe-pipe-reset-keybinding
+                          (lambda (new-cmd)
+                            (interactive "CReselect command: ")
+                            (setq cmd new-cmd)))
+        ))))
 
 (provide 'oboe)
 

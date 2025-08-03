@@ -36,6 +36,7 @@ Currently we have commands: (if you have any good ideas, please tell me!)
 - `oboe-recall` brings back a temporary buffer.
 - `oboe-absorb` absorbs content from multiple buffers.
 - `oboe-menu` filters out temporary buffers in a buffer menu.
+- `oboe-pipe` creates a new temporary buffer but pass it to a command.
 
 I think we may do more in the future, for example, merge two buffers,
 continue from an exist buffer like snapshots ... After all, temporary
@@ -129,6 +130,17 @@ once.
 The order of minor-mode calls is determined by `mapc`.
 
 - `:init-content` : A string to be inserted into the buffer.
+
+- `:return` : A function to extract a value from current buffer to
+be provided for other usages.  For example, a `oboe-pipe`.
+
+``` emacs-lisp
+    ;; how `oboe-pipe' works
+    (funcall cmd ;; => 1. select cmd ==========> 4. call cmd
+      (funcall (plist-get config :return)  ;; => 3. convert format 
+        (get-buffer *temporary buffer<X>*) ;; => 2. edit tmp buffer
+        ))
+```
 
 - `:revive` : A function to find and display a buried buffer with
 given config.  This function works on a specific buffer config

@@ -20,7 +20,7 @@ The idea of oboe.el is just as simple as following steps:
 
 1. prompt for configuration to load (you can skip the prompt)
 2. create a buffer and load configuration
-3. display it for use, with method specified by :display
+3. display it for use, with method specified by `:display`
 4. manage buffers with a buffer menu
 
 The idea looks like a trival version of org-capture, but trival
@@ -37,6 +37,7 @@ Currently we have commands: (if you have any good ideas, please tell me!)
 - `oboe-absorb` absorbs content from multiple buffers.
 - `oboe-menu` filters out temporary buffers in a buffer menu.
 - `oboe-pipe` creates a new temporary buffer but pass it to a command.
+- `oboe-blow` absorbs selected region and send it to an oboe pipe.
 
 I think we may do more in the future, for example, merge two buffers,
 continue from an exist buffer like snapshots ... After all, temporary
@@ -83,12 +84,13 @@ You can add a new class `scratch` by:
 
 ``` emacs-lisp
     (add-to-list 'oboe-config-alist
-                 '(scratch
+                 `(scratch
                    :major emacs-lisp-mode
-                   :assoc-file (concat (user-emacs-directory)
+                   :assoc-file ,(concat (user-emacs-directory)
                                        "scratch-persistent"))
                  ))
-    ;; create that associated file if it does not exist yet
+    ;; :assoc-file makes a weak association
+    ;; create that associated file first if it does not exist yet
     (make-empty-file (concat (user-emacs-directory)
                              "scratch-persistent"))
 

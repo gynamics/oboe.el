@@ -42,9 +42,6 @@
 ;; also made it harder to learn to extend it.  You may choose to do
 ;; the same thing in the trival way..
 
-;; At first there was a prototype in CL style, but I found that it was
-;; actually not clearer with CL, so I just abandoned using cl-lib.
-
 ;;; Code:
 
 (require 'subr-x)
@@ -348,9 +345,11 @@ The behavior is user-defined when CONFIG is nil."
       (error "Unknown config name %s" config-name))))
 
 ;;;###autoload
-(defun oboe-recall (config-name &optional no-select)
-  "Recall a temporary buffer by selecting CONFIG-NAME interactively.
-If universal argument NO-SELECT is given, do not select CONFIG."
+(defun oboe-recall (config-name &optional select-p)
+  "Recall a buried temporary buffer, bring it to front.
+The revived buffer is selected by `oboe-default-revive-method'.
+If universal argument SELECT-P is given, prompt for CONFIG-NAME to
+select a specific config and use its `:revive' property."
   (interactive
    (list
     (unless current-prefix-arg
@@ -358,7 +357,7 @@ If universal argument NO-SELECT is given, do not select CONFIG."
                        oboe-config-alist))
     current-prefix-arg))
   (oboe-recall-buffer
-   (unless no-select
+   (when select-p
      (let ((config (assoc (intern config-name) oboe-config-alist)))
        (if config
            (cons :name config)
@@ -432,50 +431,71 @@ P. S.  You can absorb on one buffer for multiple times."
   :type 'key-sequence
   :group 'oboe)
 
-(defun oboe-pipe-commit (command ctxt-buf arg-buf)
-  "Commit ARG-BUF to COMMAND to be called in CTXT-BUF.
-ARG-BUF should be an oboe buffer."
-  (let* ((class (gethash arg-buf oboe--buffers))
+(defun oboe-pipe-commit (command ctxt-buf pipe-buf)
+  "Commit PIPE-BUF to COMMAND to be called in CTXT-BUF.
+PIPE-BUF should be an oboe buffer."
+  (let* ((class (gethash pipe-buf oboe--buffers))
          (config (alist-get class oboe-config-alist))
          (converter (or (plist-get config :return)
                         'identity))
-         (arg (funcall converter arg-buf)))
+         (arg (funcall converter pipe-buf)))
     (with-current-buffer ctxt-buf
       (funcall command arg)))
-  (kill-buffer arg-buf))
+  (kill-buffer pipe-buf))
+
+(defun oboe-pipe-setup (command ctxt-buf pipe-buf)
+  "Set up keybindings in PIPE-BUF for a oboe pipe.
+CTXT-BUF, PIPE-BUF and COMMAND are provided to `oboe-pipe-commit'."
+  (with-current-buffer pipe-buf
+    (setq-local header-line-format
+                (concat
+                 (format "Command: [%s] " command)
+                 "Commit: " (propertize oboe-pipe-commit-keybinding 'face 'highlight)
+                 " Abort: " (propertize oboe-pipe-abort-keybinding 'face 'highlight)
+                 " Reselect: " (propertize oboe-pipe-reset-keybinding 'face 'highlight)))
+    (keymap-local-set oboe-pipe-commit-keybinding
+                      (lambda ()
+                        (interactive)
+                        (oboe-pipe-commit command ctxt-buf pipe-buf)))
+    (keymap-local-set oboe-pipe-abort-keybinding
+                      (lambda ()
+                        (interactive)
+                        (kill-buffer pipe-buf)))
+    (keymap-local-set oboe-pipe-reset-keybinding
+                      (lambda (new-cmd)
+                        (interactive "CReselect command: ")
+                        (setq command new-cmd)))))
 
 ;;;###autoload
-(defun oboe-pipe (cmd)
+(defun oboe-pipe (command)
   "Create a temporary buffer for intermediate text editing.
-After editing that buffer, pipe buffer as the argument to CMD with
+After editing that buffer, pipe buffer as the argument to COMMAND with
 `oboe-pipe-commit-keybinding' or abort it with
-`oboe-pipe-abort-keybinding'.  You can also reselect the command before
+`oboe-pipe-abort-keybinding'.  You can also reselect COMMAND before
 commit with `oboe-pipe-reset-keybinding'."
   (interactive "CCommand: ")
-  (let ((orig-buf (current-buffer)))
-    (let ((buf (call-interactively #'oboe-new))
-          (cmd cmd))
-      (with-current-buffer buf
-        (setq-local header-line-format
-                    (concat
-                     (format "Command: [%s] " cmd)
-                     "Commit: " (propertize "C-c C-c" 'face 'highlight)
-                     " Abort: " (propertize "C-c C-k" 'face 'highlight)
-                     " Reselect: " (propertize "C-c C-r" 'face 'highlight)))
-        (keymap-local-set oboe-pipe-commit-keybinding
-                          (lambda ()
-                            (interactive)
-                            (oboe-pipe-commit cmd orig-buf buf)))
-        (keymap-local-set oboe-pipe-abort-keybinding
-                          (lambda ()
-                            (interactive)
-                            (kill-buffer buf)))
-        (keymap-local-set oboe-pipe-reset-keybinding
-                          (lambda (new-cmd)
-                            (interactive "CReselect command: ")
-                            (setq cmd new-cmd)))
-        ))))
+  (oboe-pipe-setup command (current-buffer) (call-interactively #'oboe-new)))
+
+(defcustom oboe-default-pipe-method
+  (lambda (pipe-buf)
+    (delete-region (region-beginning) (region-end))
+    (insert-buffer-substring pipe-buf))
+  "Default command used by `oboe-pipe-commit' in `oboe-blow'.
+This function will be called with current buffer as ctxt-buf."
+  :type 'function
+  :group 'oboe)
+
+;;;###autoload
+(defun oboe-blow (&optional select-p)
+  "Capture selected region and absorb it into a oboe pipe.
+If universal argument SELECT-P is given, prompt for command.  Otherwise
+use `oboe-default-pipe-method', which replaces selected region by
+default.  This can be thought as an oboe version of `edit-indirect'."
+  (interactive "P")
+  (oboe-pipe-setup
+   (if select-p (read-command "Command: ") oboe-default-pipe-method)
+   (current-buffer)
+   (oboe-absorb (list (current-buffer)) t)))
 
 (provide 'oboe)
-
 ;;; oboe.el ends here

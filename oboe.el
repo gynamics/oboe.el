@@ -40,7 +40,7 @@
 ;; The idea looks like a trival version of org-capture, but trival
 ;; isn't that bad.  org integrated so many advanced features, which
 ;; also made it harder to learn to extend it.  You may choose to do
-;; the same thing in the trival way..
+;; the same thing in the trival way.
 
 ;;; Code:
 
@@ -286,8 +286,9 @@ Theoretically it won't overflow for normal usage."
 (defun oboe-find-last-buffer (&optional config)
   "Find the last buried buffer with CONFIG.
 If CONFIG is nil, find one from all oboe buffers."
-  (let ((matches (or (cdr (gethash (plist-get config :name)
-                                   oboe--classes))
+  (let ((matches (or (and config
+                          (cdr (gethash (plist-get config :name)
+                                        oboe--classes)))
                      (hash-table-keys oboe--buffers)))
         (buffers (cdr (buffer-list)))
         (found nil))
@@ -308,8 +309,9 @@ If CONFIG is nil, find one from all oboe buffers."
   "Find and display last buried buffer with CONFIG.
 The behavior is user-defined when CONFIG is nil."
   (let ((display-method
-         (or (plist-get config :display)
-             oboe-default-display-method)))
+         (or (and config
+                  (plist-get config :display)
+                  oboe-default-display-method))))
     (if display-method
         (let ((buffer (oboe-find-last-buffer config)))
           (when buffer
@@ -345,23 +347,22 @@ The behavior is user-defined when CONFIG is nil."
       (error "Unknown config name %s" config-name))))
 
 ;;;###autoload
-(defun oboe-recall (config-name &optional select-p)
+(defun oboe-recall (config-name)
   "Recall a buried temporary buffer, bring it to front.
 The revived buffer is selected by `oboe-default-revive-method'.
-If universal argument SELECT-P is given, prompt for CONFIG-NAME to
+If universal argument is given, prompt for CONFIG-NAME to
 select a specific config and use its `:revive' property."
   (interactive
    (list
-    (unless current-prefix-arg
+    (when current-prefix-arg
       (completing-read "Revive a temporary buffer with config: "
-                       oboe-config-alist))
-    current-prefix-arg))
+                       oboe-config-alist))))
   (oboe-recall-buffer
-   (when select-p
-     (let ((config (assoc (intern config-name) oboe-config-alist)))
-       (if config
-           (cons :name config)
-         (error "Unknown config name %s" config-name))))))
+   (and config-name
+        (let ((config (assoc (intern config-name) oboe-config-alist)))
+          (if config
+              (cons :name config)
+            (error "Unknown config name %s" config-name))))))
 
 (defcustom oboe-default-absorb-method
   'insert-buffer-substring
@@ -399,16 +400,20 @@ P. S.  You can absorb on one buffer for multiple times."
 
 ;;;###autoload
 (defun oboe-menu (config-names)
-  "Display temporary buffers with CONFIG-NAMES in a menu."
+  "Display temporary buffers in a menu, filtered by CONFIG-NAMES.
+If a universal argument is given, prompt for CONFIG-NAMES."
   (interactive
    (list
-    (completing-read-multiple
-     "Display temporary buffers with config(s): "
-     oboe-config-alist)))
+    (when current-prefix-arg
+      (completing-read-multiple
+       "Display temporary buffers with config(s): "
+       oboe-config-alist))))
   (let ((config-list
-         (mapcar
-          (lambda (config-name) (intern config-name))
-          config-names)))
+         (or (and config-names
+                  (mapcar
+                   (lambda (config-name) (intern config-name))
+                   config-names))
+             (hash-table-keys oboe--classes))))
     (switch-to-buffer
      (list-buffers-noselect
       nil

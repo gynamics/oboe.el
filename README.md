@@ -28,9 +28,6 @@ isn't that bad.  org integrated so many advanced features, which
 also made it harder to learn to extend it.  You may choose to do
 the same thing in the trival way.
 
-At first there was a prototype in CL style, but I found that it was
-actually not clearer with CL, so I just abandoned using cl-lib.
-
 Currently we have commands: (if you have any good ideas, please tell me!)
 - `oboe-new` creates a new temporary buffer.
 - `oboe-recall` brings back a temporary buffer.

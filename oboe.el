@@ -1,9 +1,9 @@
-;;; oboe.el --- A simple Emacs temporary buffer management framework -*- lexical-binding: t -*-
+;;; oboe.el --- A simple temporary buffer management framework -*- lexical-binding: t -*-
 
 ;; Author: gynamics
 ;; Maintainer: gynamics
 ;; Package-Version: 0.1
-;; Package-Requires: ()
+;; Package-Requires: ((emacs "29.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
 
@@ -84,8 +84,7 @@ Be aware that there may be nil values."
   (with-current-buffer buf
     (mapc (lambda (loader)
             (oboe-use config loader))
-          oboe-loaders)
-    )
+          oboe-loaders))
   buf)
 
 (defcustom oboe-config-alist
@@ -175,10 +174,8 @@ COUNTER is the accumulated value of buffers.")
                  (puthash class (list 0) oboe--classes))))
         (setcdr buffers (cons buf (cdr buffers))))
       ;; keep backward reference
-      (puthash buf class oboe--buffers)
-      ))
-   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))
-   ))
+      (puthash buf class oboe--buffers)))
+   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))))
 
 (defun oboe-unregister-buffer (buffer-or-name)
   "Unregister BUFFER-OR-NAME from `oboe--classes'."
@@ -192,14 +189,10 @@ COUNTER is the accumulated value of buffers.")
           ;; remove buf from buffer list of this class
           (let ((buffers (gethash class oboe--classes)))
             (when buffers
-              (setcdr buffers (delq buf (cdr buffers)))
-              ))
+              (setcdr buffers (delq buf (cdr buffers)))))
           ;; remove backward reference to release the buffer
-          (remhash buf oboe--buffers)
-          ))
-      ))
-   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))
-   ))
+          (remhash buf oboe--buffers)))))
+   (t (error "%S is not a valid buffer or buffer name" buffer-or-name))))
 
 (defcustom oboe-default-display-method
   'switch-to-buffer
@@ -219,8 +212,7 @@ BUFFER must be a valid oboe buffer."
           (or (plist-get config :display)
               oboe-default-display-method
               (error "No available display method!"))))
-    (funcall display-method buffer)
-    ))
+    (funcall display-method buffer)))
 
 (defun oboe-make-buffer-name (config)
   "Return a buffer name string according to CONFIG.

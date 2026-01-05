@@ -3,7 +3,7 @@
 ;; Author: gynamics
 ;; Maintainer: gynamics
 ;; Package-Version: 0.1
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "30.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
 
@@ -446,7 +446,7 @@ CTXT-BUF, PIPE-BUF and COMMAND are provided to `oboe-pipe-commit'."
   (with-current-buffer pipe-buf
     (setq-local header-line-format
                 (concat
-                 (format "Command: [%s] " command)
+                 (format "Command: [%s] " (help-fns-function-name command))
                  "Commit: " (propertize oboe-pipe-commit-keybinding 'face 'highlight)
                  " Abort: " (propertize oboe-pipe-abort-keybinding 'face 'highlight)
                  " Reselect: " (propertize oboe-pipe-reset-keybinding 'face 'highlight)))
@@ -475,7 +475,9 @@ commit with `oboe-pipe-reset-keybinding'."
 
 (defcustom oboe-default-pipe-method
   (lambda (pipe-buf)
-    (delete-region (region-beginning) (region-end))
+    (if (region-active-p)
+        (delete-region (region-beginning) (region-end))
+      (delete-region (point-min) (point-max)))
     (insert-buffer-substring pipe-buf))
   "Default command used by `oboe-pipe-commit' in `oboe-blow'.
 This function will be called with current buffer as ctxt-buf."

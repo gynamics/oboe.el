@@ -367,7 +367,7 @@ It should have the same arguments with `insert-buffer-substring'"
 (defun oboe-absorb (buffers &optional region-only)
   "Absorb selected BUFFERS into a temporary buffer.
 If a universal argument as REGION-ONLY is given, only absorb active
-regions is selected buffers.  Otherwise, absorb the whole buffer.
+regions is selected buffers.
 P. S.  You can absorb on one buffer for multiple times."
   (interactive
    (list
@@ -379,12 +379,11 @@ P. S.  You can absorb on one buffer for multiple times."
     current-prefix-arg))
   (let ((buf (call-interactively 'oboe-new)))
     (dolist (in buffers)
-      (let ((args
-             (cons in (when region-only
-                        (with-current-buffer in
-                          (when (use-region-p)
-                            (list (region-beginning)
-                                  (region-end))))))))
+      (let ((args (cons in (when region-only
+                             (with-current-buffer in
+                               (if (use-region-p)
+                                   (list (region-beginning) (region-end))
+                                 (list (point) (point))))))))
         (with-current-buffer buf
           (apply oboe-default-absorb-method args))))
     (oboe-display-buffer buf)
@@ -475,9 +474,8 @@ commit with `oboe-pipe-reset-keybinding'."
 
 (defcustom oboe-default-pipe-method
   (lambda (pipe-buf)
-    (if (region-active-p)
-        (delete-region (region-beginning) (region-end))
-      (delete-region (point-min) (point-max)))
+    (when (region-active-p)
+      (delete-region (region-beginning) (region-end)))
     (insert-buffer-substring pipe-buf))
   "Default command used by `oboe-pipe-commit' in `oboe-blow'.
 This function will be called with current buffer as ctxt-buf."

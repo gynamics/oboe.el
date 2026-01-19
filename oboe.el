@@ -2,7 +2,7 @@
 
 ;; Author: gynamics
 ;; Maintainer: gynamics
-;; Package-Version: 0.1
+;; Package-Version: 1.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
@@ -44,7 +44,7 @@
 
 ;;; Code:
 
-(require 'subr-x)
+(eval-when-compile (require 'subr-x))
 
 (defgroup oboe nil
   "A simple temporary buffer management framework."
@@ -56,9 +56,7 @@
        (when f (funcall f)))
      :major)
    '((lambda (l)
-       (mapc (lambda (f)
-               (funcall f))
-             l))
+       (mapc (lambda (f) (funcall f)) l))
      :minor-list)
    '((lambda (s)
        (when s (insert s)))
@@ -182,16 +180,13 @@ COUNTER is the accumulated value of buffers.")
   (cond
    ((or (bufferp buffer-or-name)
         (stringp buffer-or-name))
-    (let* ((buf (get-buffer buffer-or-name))
-           (class (gethash buf oboe--buffers)))
-      (when class
-        (progn
-          ;; remove buf from buffer list of this class
-          (let ((buffers (gethash class oboe--classes)))
-            (when buffers
-              (setcdr buffers (delq buf (cdr buffers)))))
-          ;; remove backward reference to release the buffer
-          (remhash buf oboe--buffers)))))
+    (when-let* ((buf (get-buffer buffer-or-name))
+                (class (gethash buf oboe--buffers))
+                (buffers (gethash class oboe--classes)))
+      ;; remove buf from buffer list of this class
+      (setcdr buffers (delq buf (cdr buffers)))
+      ;; remove backward reference to release the buffer
+      (remhash buf oboe--buffers)))
    (t (error "%S is not a valid buffer or buffer name" buffer-or-name))))
 
 (defcustom oboe-default-display-method
@@ -256,20 +251,17 @@ Theoretically it won't overflow for normal usage."
 
 (defun oboe-make-buffer (config)
   "Create a temporary buffer according to CONFIG."
-  (let* ((creator
-          (or (plist-get config :create)
-              oboe-default-create-method))
+  (let* ((creator (or (plist-get config :create)
+                      oboe-default-create-method))
          (buf (funcall creator config)))
     (with-current-buffer buf
       (add-hook 'kill-buffer-hook
-                (lambda ()
-                  (oboe-unregister-buffer (current-buffer))))
+                (lambda () (oboe-unregister-buffer (current-buffer))))
       (when (and oboe-delete-temp-file-on-kill
                  (and-let* ((path (plist-get config :assoc-file)))
                    (file-directory-p path)))
         (add-hook 'kill-buffer-hook
-                  (lambda ()
-                    (delete-file (buffer-file-name))))
+                  (lambda () (delete-file (buffer-file-name))))
         (make-local-variable 'kill-buffer-query-functions)
         (setq kill-buffer-query-functions nil))
       (oboe-register-buffer config buf)
@@ -278,10 +270,10 @@ Theoretically it won't overflow for normal usage."
 (defun oboe-find-last-buffer (&optional config)
   "Find the last buried buffer with CONFIG.
 If CONFIG is nil, find one from all oboe buffers."
-  (let ((matches (or (and config
-                          (cdr (gethash (plist-get config :name)
-                                        oboe--classes)))
-                     (hash-table-keys oboe--buffers)))
+  (let ((matches
+         (or (and config
+                  (cdr (gethash (plist-get config :name) oboe--classes)))
+             (hash-table-keys oboe--buffers)))
         (buffers (cdr (buffer-list)))
         (found nil))
     ;; loop through buffers and check if it's with CONFIG
@@ -300,14 +292,12 @@ If CONFIG is nil, find one from all oboe buffers."
 (defun oboe-revive-last-buffer (&optional config)
   "Find and display last buried buffer with CONFIG.
 The behavior is user-defined when CONFIG is nil."
-  (let ((display-method
-         (or (and config
-                  (plist-get config :display)
-                  oboe-default-display-method))))
-    (if display-method
-        (let ((buffer (oboe-find-last-buffer config)))
-          (when buffer
-            (funcall display-method buffer))))))
+  (when-let ((display-method
+              (or (and config
+                       (plist-get config :display))
+                  oboe-default-display-method))
+             (buffer (oboe-find-last-buffer config)))
+    (funcall display-method buffer)))
 
 (defcustom oboe-default-revive-method
   'oboe-revive-last-buffer
@@ -324,37 +314,38 @@ The behavior is user-defined when CONFIG is nil."
         (funcall revive-method config)
       (error "No available method to revive buffer!"))))
 
+(defun oboe-read-config (prompt)
+  "A helper for reading oboe config with PROMPT, return a symbol."
+  (intern (completing-read prompt oboe-config-alist)))
+
 ;;;###autoload
 (defun oboe-new (config-name)
   "Create a temporary buffer by selecting CONFIG-NAME interactively."
   (interactive
-   (list
-    (completing-read "Create a temporary buffer with config: "
-                     oboe-config-alist)))
-  (let ((config (assoc (intern config-name) oboe-config-alist)))
-    (if config
-        (let ((buffer (oboe-make-buffer (cons :name config))))
-          (oboe-display-buffer buffer)
-          buffer)
-      (error "Unknown config name %s" config-name))))
+   (list (oboe-read-config
+          "Create a temporary buffer with config: ")))
+  (if-let ((config (assoc config-name oboe-config-alist)))
+      (let ((buffer (oboe-make-buffer (cons :name config))))
+        (oboe-display-buffer buffer)
+        buffer)
+    (error "Unknown config name %s" config-name)))
 
 ;;;###autoload
 (defun oboe-recall (config-name)
   "Recall a buried temporary buffer, bring it to front.
 The revived buffer is selected by `oboe-default-revive-method'.
-If universal argument is given, prompt for CONFIG-NAME to
+
+If prefix argument is given, prompt for CONFIG-NAME to
 select a specific config and use its `:revive' property."
   (interactive
    (list
     (when current-prefix-arg
-      (completing-read "Revive a temporary buffer with config: "
-                       oboe-config-alist))))
+      (oboe-read-config "Revive a temporary buffer with config: "))))
   (oboe-recall-buffer
    (and config-name
-        (let ((config (assoc (intern config-name) oboe-config-alist)))
-          (if config
-              (cons :name config)
-            (error "Unknown config name %s" config-name))))))
+        (if-let ((config (assoc config-name oboe-config-alist)))
+            (cons :name config)
+          (error "Unknown config name %s" config-name)))))
 
 (defcustom oboe-default-absorb-method
   'insert-buffer-substring
@@ -364,20 +355,32 @@ It should have the same arguments with `insert-buffer-substring'"
   :group 'oboe)
 
 ;;;###autoload
-(defun oboe-absorb (buffers &optional region-only)
+(defun oboe-absorb (buffers &optional region-only config)
   "Absorb selected BUFFERS into a temporary buffer.
-If a universal argument as REGION-ONLY is given, only absorb active
-regions is selected buffers.
+
+If prefix argument as REGION-ONLY is given, only absorb active regions
+in selected buffers.
+
+If CONFIG is given, do not prompt for config name.  CONFIG can be either
+a symbol which is a valid key in `oboe-config-alist', or a plist.
+
 P. S.  You can absorb on one buffer for multiple times."
   (interactive
    (list
     (mapcar
-     'get-buffer
+     #'get-buffer
      (completing-read-multiple
       "Absorb buffer(s): "
       (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))
     current-prefix-arg))
-  (let ((buf (call-interactively 'oboe-new)))
+  (let ((buf (cond
+              ((null config) (call-interactively #'oboe-new))
+              ((symbolp config) (oboe-new config))
+              ((plistp config)
+               (let ((buffer (oboe-make-buffer config)))
+                 (oboe-display-buffer buffer)
+                 buffer))
+              (t (error "Invalid config type %S!" (type-of config))))))
     (dolist (in buffers)
       (let ((args (cons in (when region-only
                              (with-current-buffer in
@@ -392,25 +395,22 @@ P. S.  You can absorb on one buffer for multiple times."
 ;;;###autoload
 (defun oboe-menu (config-names)
   "Display temporary buffers in a menu, filtered by CONFIG-NAMES.
-If a universal argument is given, prompt for CONFIG-NAMES."
+
+If prefix argument is given, prompt for CONFIG-NAMES."
   (interactive
    (list
     (when current-prefix-arg
-      (completing-read-multiple
-       "Display temporary buffers with config(s): "
-       oboe-config-alist))))
-  (let ((config-list
-         (or (and config-names
-                  (mapcar
-                   (lambda (config-name) (intern config-name))
-                   config-names))
-             (hash-table-keys oboe--classes))))
-    (switch-to-buffer
-     (list-buffers-noselect
-      nil
-      (hash-table-keys oboe--buffers)
-      (lambda (buf)
-        (member (gethash buf oboe--buffers) config-list))))))
+      (mapcar (lambda (s) (intern s))
+              (completing-read-multiple
+               "Display temporary buffers with config(s): "
+               oboe-config-alist)))))
+  (switch-to-buffer
+   (list-buffers-noselect
+    nil
+    (hash-table-keys oboe--buffers)
+    (lambda (buf)
+      (member (gethash buf oboe--buffers)
+              (or config-names (hash-table-keys oboe--classes)))))))
 
 (defcustom oboe-pipe-commit-keybinding "C-c C-c"
   "Default keybinding for \\[oboe-pipe-commit] in an oboe pipe."
@@ -432,9 +432,7 @@ If a universal argument is given, prompt for CONFIG-NAMES."
 PIPE-BUF should be an oboe buffer."
   (let* ((class (gethash pipe-buf oboe--buffers))
          (config (alist-get class oboe-config-alist))
-         (converter (or (plist-get config :return)
-                        'identity))
-         (arg (funcall converter pipe-buf)))
+         (arg (funcall (or (plist-get config :return) #'identity) pipe-buf)))
     (with-current-buffer ctxt-buf
       (funcall command arg)))
   (kill-buffer pipe-buf))
@@ -445,7 +443,8 @@ CTXT-BUF, PIPE-BUF and COMMAND are provided to `oboe-pipe-commit'."
   (with-current-buffer pipe-buf
     (setq-local header-line-format
                 (concat
-                 (format "Command: [%s] " (help-fns-function-name command))
+                 (format "Command: %s " (propertize (help-fns-function-name command)
+                                                    'face font-lock-function-name-face))
                  "Commit: " (propertize oboe-pipe-commit-keybinding 'face 'highlight)
                  " Abort: " (propertize oboe-pipe-abort-keybinding 'face 'highlight)
                  " Reselect: " (propertize oboe-pipe-reset-keybinding 'face 'highlight)))
@@ -472,27 +471,38 @@ commit with `oboe-pipe-reset-keybinding'."
   (interactive "CCommand: ")
   (oboe-pipe-setup command (current-buffer) (call-interactively #'oboe-new)))
 
+(defun oboe-replace-region (buf)
+  "Replace active region with content in BUF."
+  (when (region-active-p)
+    (delete-region (region-beginning) (region-end)))
+  (insert-buffer-substring buf))
+
 (defcustom oboe-default-pipe-method
-  (lambda (pipe-buf)
-    (when (region-active-p)
-      (delete-region (region-beginning) (region-end)))
-    (insert-buffer-substring pipe-buf))
+  #'oboe-replace-region
   "Default command used by `oboe-pipe-commit' in `oboe-blow'.
 This function will be called with current buffer as ctxt-buf."
   :type 'function
   :group 'oboe)
 
 ;;;###autoload
-(defun oboe-blow (&optional select-p)
+(defun oboe-blow ()
   "Capture selected region and absorb it into a oboe pipe.
-If universal argument SELECT-P is given, prompt for command.  Otherwise
-use `oboe-default-pipe-method', which replaces selected region by
-default.  This can be thought as an oboe version of `edit-indirect'."
-  (interactive "P")
+
+If prefix argument is given, prompt for command.  Otherwise use
+`oboe-default-pipe-method', which replaces selected region with buffer content.
+
+If double `C-u' prefix is given, prompt for buffer config name.
+Otherwise simply use the major mode of parent buffer."
+  (interactive)
   (oboe-pipe-setup
-   (if select-p (read-command "Command: ") oboe-default-pipe-method)
+   (if current-prefix-arg
+       (read-command "Command: " oboe-default-pipe-method)
+     oboe-default-pipe-method)
    (current-buffer)
-   (oboe-absorb (list (current-buffer)) t)))
+   (oboe-absorb (list (current-buffer)) t
+                (unless (and current-prefix-arg
+                             (>= (car current-prefix-arg) 16))
+                  `(:name blow :major ,major-mode)))))
 
 (provide 'oboe)
 ;;; oboe.el ends here

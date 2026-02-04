@@ -319,33 +319,39 @@ The behavior is user-defined when CONFIG is nil."
   (intern (completing-read prompt oboe-config-alist)))
 
 ;;;###autoload
-(defun oboe-new (config-name)
-  "Create a temporary buffer by selecting CONFIG-NAME interactively."
+(defun oboe-new (config)
+  "Create a temporary buffer by selecting CONFIG interactively.
+
+If not called interactively, CONFIG can be either a symbol for the
+config name registered in `oboe-config-alist' or a config plist."
   (interactive
    (list (oboe-read-config
           "Create a temporary buffer with config: ")))
-  (if-let ((config (assoc config-name oboe-config-alist)))
-      (let ((buffer (oboe-make-buffer (cons :name config))))
-        (oboe-display-buffer buffer)
-        buffer)
-    (error "Unknown config name %s" config-name)))
+  (let* ((ac (assoc config oboe-config-alist))
+         (cf (cond (ac (cons :name ac))
+                   ((plistp config) config)
+                   (t (error "Invalid config %s" config))))
+         (buffer (oboe-make-buffer cf)))
+    (oboe-display-buffer buffer)
+    buffer))
 
 ;;;###autoload
-(defun oboe-recall (config-name)
+(defun oboe-recall (config)
   "Recall a buried temporary buffer, bring it to front.
 The revived buffer is selected by `oboe-default-revive-method'.
 
-If prefix argument is given, prompt for CONFIG-NAME to
-select a specific config and use its `:revive' property."
+If called interactively, with prefix argument given, prompt for CONFIG
+to select a specific config and use its `:revive' property.  CONFIG must
+be a symbol for the config name registed in `oboe-config-alist'."
   (interactive
    (list
     (when current-prefix-arg
       (oboe-read-config "Revive a temporary buffer with config: "))))
   (oboe-recall-buffer
-   (and config-name
-        (if-let ((config (assoc config-name oboe-config-alist)))
+   (and config
+        (if-let ((config (assoc config oboe-config-alist)))
             (cons :name config)
-          (error "Unknown config name %s" config-name)))))
+          (error "Unknown config name %s" config)))))
 
 (defcustom oboe-default-absorb-method
   'insert-buffer-substring
@@ -373,14 +379,9 @@ P. S.  You can absorb on one buffer for multiple times."
       "Absorb buffer(s): "
       (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))
     current-prefix-arg))
-  (let ((buf (cond
-              ((null config) (call-interactively #'oboe-new))
-              ((symbolp config) (oboe-new config))
-              ((plistp config)
-               (let ((buffer (oboe-make-buffer config)))
-                 (oboe-display-buffer buffer)
-                 buffer))
-              (t (error "Invalid config type %S!" (type-of config))))))
+  (let ((buf (if config
+                 (oboe-new config)
+               (call-interactively #'oboe-new))))
     (dolist (in buffers)
       (let ((args (cons in (when region-only
                              (with-current-buffer in

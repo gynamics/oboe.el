@@ -33,7 +33,7 @@ Currently we have commands: (if you have any good ideas, please tell me!)
 - `oboe-recall` brings back a temporary buffer.
 - `oboe-absorb` absorbs content from multiple buffers.
 - `oboe-menu` filters out temporary buffers in a buffer menu.
-- `oboe-pipe` creates a new temporary buffer but pass it to a command.
+- `oboe-pipe` creates a new temporary buffer then apply a command on it.
 - `oboe-blow` absorbs selected region and send it to an oboe pipe.
 
 I think we may do more in the future, for example, merge two buffers,
@@ -103,49 +103,58 @@ can alter its initial value with `custom-set-variables`.
 I have implemented these keys:
 
 - `:create` : A function to create the buffer.  Its default value is
-`oboe-default-create-method`.  Normally you don't need to tweak it.
+  `oboe-default-create-method`.  Normally you don't need to tweak it.
 
 - `:display` : A function to display given buffer.  Its default value
-is `oboe-default-display-method`.
+  is `oboe-default-display-method`. You may tweak it to adapt to you
+  window management scheme, e. g. `popwin:popup-buffer`.
 
 - `:assoc-file` : A path as a string.  This allows us to associate
-temporary buffers to files to solve some path env problems when
-loading a project-wide major-mode.  It can also be used for creating
-persistent storage.
+  temporary buffers to files to solve some path env problems when
+  loading a project-wide major-mode.  It can also be used for creating
+  persistent storage.
+
   - If it is a regular file, all buffers created will be associated to
-this file.  This file will never be truncated.
+    this file.  This file will never be truncated.
+
   - If it is a directory, a unique temporary file will be created in
-that directory for each new oboe buffer to be associated to.  These
-files may be deleted when associated buffers are killed.  You can
-control this behavior via toggle `oboe-delete-temp-file-on-kill`.
+    that directory for each new oboe buffer to be associated to.
+    These files may be deleted when associated buffers are killed.
+    You can control this behavior via toggle
+    `oboe-delete-temp-file-on-kill`.
+
   - If it is nil (default) or anything else, do not associate
-temporary buffer to file.
+    temporary buffer to file.
 
 - `:major` : Major mode to be loaded in the buffer.  Actually, it
-doesn't need to be a major-mode at all, just a function to be called
-once.
+  doesn't need to be a major-mode at all, just a function to be called
+  once when the buffer is just created.
 
 - `:minor-list` : A list of minor-modes to be loaded in the buffer.
-The order of minor-mode calls is determined by `mapc`.
+  The order of minor-mode calls is determined by `mapc`.
 
 - `:init-content` : A string to be inserted into the buffer.
+  It can also be a function that returns a string.
 
-- `:return` : A function to extract a value from current buffer to
-be provided for other usages.  For example, a `oboe-pipe`.
+- `:return` : A function to extract a value from current buffer to be
+  provided for other usages.  For example, a `oboe-pipe`.
 
-``` emacs-lisp
+  ``` emacs-lisp
     ;; how `oboe-pipe' works
-    (funcall cmd ;; => 1. select cmd ==========> 4. call cmd
-      (funcall (plist-get config :return)  ;; => 3. convert format 
-        (get-buffer *temporary buffer<X>*) ;; => 2. edit tmp buffer
+    (apply (read-command) ;; => 1. select cmd ===> 4. call cmd
+      (funcall (plist-get config :return)    ;; => 3. convert format 
+        (get-buffer *temporary buffer<X>*)   ;; => 2. edit tmp buffer
         ))
-```
+  ```
+  
+  You can think this method as the `return` monad for lifting the
+  input `x` to `(f x)` so that we can `(apply #'cmd (f x))`.
 
 - `:revive` : A function to find and display a buried buffer with
-given config.  This function works on a specific buffer config
-rather than a specific buffer, so you can choose which buffer to
-revive, even concat all existing buffers.  Its default value is
-`oboe-default-revive-method`.
+  given config.  This function works on a specific buffer config
+  rather than a specific buffer, so you can choose which buffer to
+  revive, even concat all existing buffers.  Its default value is
+  `oboe-default-revive-method`.
 
 Some items can be used by `oboe-loaders`, which is a list of
 functions, each function is a loader that will be called to initialize
@@ -167,3 +176,11 @@ for your function, so your function should be able to check them.
 
 Actually there was a prototype in CL style. But I just found that,
 that one was not simpler, so I just abandoned CL and chose plists.
+
+## Hints
+
+- Side pipe: You don't have to apply commands with argument, for
+  example, you may set the `:return` method of your oboe buffer to
+  `(lambda (buf) '())`, which always return nil, then you can apply a
+  command that does not need an argument as the bellend. The bellend
+  command is always runned in the context buffer.

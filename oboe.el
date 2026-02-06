@@ -26,21 +26,22 @@
 
 ;;; Commentary:
 
-;; Emacs has *scratch* buffer for temporary elisp evaluation.
-;; However, sometimes you may want to get a temporary buffer in
-;; specific configuration to do something immediately.  That is not
-;; something difficult to do but makes me tired.  Therefore oboe.el be.
+;; Emacs has *scratch* buffer for temporary elisp scripting.  However, sometimes
+;; you may want to get a temporary buffer with some other specific configuration
+;; to do something immediately.  That is not something difficult to do but
+;; usually diversed in various packages and sometimes there is no such support,
+;; which can be really annoying.  Therefore oboe.el be.
 
 ;; The idea of oboe.el is just as simple as following steps:
-;; 1. prompt for configuration to load (you can skip the prompt)
-;; 2. create a buffer and load configuration
-;; 3. display it for use, with method specified by :display
-;; 4. manage buffers with a buffer menu
+;; 1. prompt for a buffer configuration to load
+;; 2. create a buffer and load selected configuration
+;; 3. display it according to configuration
 
-;; The idea looks like a trival version of org-capture, but trival
-;; isn't that bad.  org integrated so many advanced features, which
-;; also made it harder to learn to extend it.  You may choose to do
-;; the same thing in the trival way.
+;; The idea looks like a trival version of org-capture, but they have different
+;; target.  oboe is designed as a temporary buffer management framework.  It
+;; will track created oboe buffers in queues, assigning each new buffer with a
+;; unique ID.  You can manage all these buffers in a menu.  It also provides a
+;; plist-based framework for creating customized configurations.
 
 ;;; Code:
 
@@ -59,7 +60,8 @@
        (mapc (lambda (f) (funcall f)) l))
      :minor-list)
    '((lambda (s)
-       (when s (insert s)))
+       (cond ((stringp s) (insert s))
+             ((functionp s) (insert (funcall s)))))
      :init-content))
   "A list of loader functions used by `oboe-load'.
 All list members should be in format (FUNC KEY1 KEY2 ...).
@@ -130,7 +132,8 @@ need to be a major-mode at all, just a function to be called once.
 :minor-list : A list of minor-modes to be loaded in the buffer.  The
 order of minor-mode calls is determined by `mapc'.
 
-:init-content : A string to be inserted into the buffer.
+:init-content : A string to be inserted into the buffer.  It may be a
+function that returns a string as well.
 
 :revive : A function to find and display a buried buffer with
 given config.  This function works on a specific buffer config
@@ -433,9 +436,9 @@ If prefix argument is given, prompt for CONFIG-NAMES."
 PIPE-BUF should be an oboe buffer."
   (let* ((class (gethash pipe-buf oboe--buffers))
          (config (alist-get class oboe-config-alist))
-         (arg (funcall (or (plist-get config :return) #'identity) pipe-buf)))
+         (arg (funcall (or (plist-get config :return) #'list) pipe-buf)))
     (with-current-buffer ctxt-buf
-      (funcall command arg)))
+      (apply command arg)))
   (kill-buffer pipe-buf))
 
 (defun oboe-pipe-setup (command ctxt-buf pipe-buf)
@@ -478,7 +481,7 @@ commit with `oboe-pipe-reset-keybinding'."
     (delete-region (region-beginning) (region-end)))
   (insert-buffer-substring buf))
 
-(defcustom oboe-default-pipe-method
+(defcustom oboe-blow-default-bellend
   #'oboe-replace-region
   "Default command used by `oboe-pipe-commit' in `oboe-blow'.
 This function will be called with current buffer as ctxt-buf."
@@ -490,15 +493,16 @@ This function will be called with current buffer as ctxt-buf."
   "Capture selected region and absorb it into a oboe pipe.
 
 If prefix argument is given, prompt for command.  Otherwise use
-`oboe-default-pipe-method', which replaces selected region with buffer content.
+`oboe-blow-default-bellend', which replaces selected region with buffer
+content.
 
 If double `C-u' prefix is given, prompt for buffer config name.
 Otherwise simply use the major mode of parent buffer."
   (interactive)
   (oboe-pipe-setup
    (if current-prefix-arg
-       (read-command "Command: " oboe-default-pipe-method)
-     oboe-default-pipe-method)
+       (read-command "Command: " oboe-blow-default-bellend)
+     oboe-blow-default-bellend)
    (current-buffer)
    (oboe-absorb (list (current-buffer)) t
                 (unless (and current-prefix-arg

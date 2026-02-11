@@ -272,6 +272,7 @@ Theoretically it won't overflow for normal usage."
 
 (defun oboe-find-last-buffer (&optional config)
   "Find the last buried buffer with CONFIG.
+
 If CONFIG is nil, find one from all oboe buffers."
   (let ((matches
          (or (and config
@@ -466,14 +467,18 @@ CTXT-BUF, PIPE-BUF and COMMAND are provided to `oboe-pipe-commit'."
                         (setq command new-cmd)))))
 
 ;;;###autoload
-(defun oboe-pipe (command)
+(defun oboe-pipe (command config)
   "Create a temporary buffer for intermediate text editing.
 After editing that buffer, pipe buffer as the argument to COMMAND with
 `oboe-pipe-commit-keybinding' or abort it with
 `oboe-pipe-abort-keybinding'.  You can also reselect COMMAND before
-commit with `oboe-pipe-reset-keybinding'."
-  (interactive "CCommand: ")
-  (oboe-pipe-setup command (current-buffer) (call-interactively #'oboe-new)))
+commit with `oboe-pipe-reset-keybinding'.
+
+CONFIG is provided to `oboe-new'."
+  (interactive
+   (list (read-command "Command: " #'ignore)
+         (oboe-read-config "Oboe config: ")))
+  (oboe-pipe-setup command (current-buffer) (oboe-new config)))
 
 (defun oboe-replace-region (buf)
   "Replace active region with content in BUF."
@@ -489,25 +494,25 @@ This function will be called with current buffer as ctxt-buf."
   :group 'oboe)
 
 ;;;###autoload
-(defun oboe-blow ()
+(defun oboe-blow (command config)
   "Capture selected region and absorb it into a oboe pipe.
 
-If prefix argument is given, prompt for command.  Otherwise use
+If prefix argument is given, prompt for COMMAND.  Otherwise use
 `oboe-blow-default-bellend', which replaces selected region with buffer
 content.
 
-If double `C-u' prefix is given, prompt for buffer config name.
-Otherwise simply use the major mode of parent buffer."
-  (interactive)
-  (oboe-pipe-setup
-   (if current-prefix-arg
-       (read-command "Command: " oboe-blow-default-bellend)
-     oboe-blow-default-bellend)
-   (current-buffer)
-   (oboe-absorb (list (current-buffer)) t
-                (unless (and current-prefix-arg
-                             (>= (car current-prefix-arg) 16))
-                  `(:name blow :major ,major-mode)))))
+If double `C-u' prefix is given, prompt for CONFIG which will be passed
+to `oboe-absorb'.  Otherwise simply use the major mode of parent buffer."
+  (interactive
+   (list
+    (if current-prefix-arg
+        (read-command "Command: " oboe-blow-default-bellend)
+      oboe-blow-default-bellend)
+    (unless (and current-prefix-arg
+                 (>= (car current-prefix-arg) 16))
+      `(:name blow :major ,major-mode))))
+  (oboe-pipe-setup command (current-buffer)
+                   (oboe-absorb (list (current-buffer)) t config)))
 
 (provide 'oboe)
 ;;; oboe.el ends here

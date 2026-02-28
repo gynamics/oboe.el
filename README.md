@@ -32,9 +32,16 @@ names of temporary buffers never repeats during emacs process life.
 ## Installation
 
 ``` emacs-lisp
-;; for emacs-30+
-(use-package oboe
-  :vc (:url "https://github.com/gynamics/oboe.el"))
+;; Install from Github, for emacs-30+
+(use-package oboe :vc (:url "https://github.com/gynamics/oboe.el"))
+```
+
+Now oboe is also available on MELPA, you can install it with
+`package-install`, or, let `use-package` handle it:
+
+``` emacs-lisp
+;; Install from MELPA
+(use-package oboe :ensure t)
 ```
 
 ## Usage
@@ -46,32 +53,7 @@ Currently we have these commands:
 - `oboe-pipe` creates a new temporary buffer then apply a command on it.
 - `oboe-blow` absorbs selected region and send it to an oboe pipe.
 
-I think we may do more in the future, for example, merge two buffers,
-continue from an exist buffer like snapshots ...  After all, temporary
-buffers construct almost everything in high-level text edit control,
-e. g. undo, redo, copy, concatenation, etc.
-
-One example of using `oboe-absorb`:
-
-``` emacs-lisp
-(use-package ibuffer
-  :commands (ibuffer)
-  :init
-  (defun ibuffer-oboe-absorb ()
-    "Absorb marked buffers into an OBOE temporary buffer."
-    (interactive)
-    (oboe-absorb (ibuffer-get-marked-buffers)))
-
-  :bind
-  (:map ibuffer-mode-map
-        ("a" .  ibuffer-oboe-absorb))
-  )
-```
-
-This is useful when you want to create a temporary view of marked
-buffers.  `ibuffer` provides various filtering functions so it will be
-very enjoyable to have this function added.
-
+See their docstring for more information.
 
 ## Customization
 
@@ -267,3 +249,60 @@ is a way to think rather than a method to implement.
   You can simply type `M-x oboe-pipe RET oboe-new-read RET elisp RET`,
   then you write a plist which is a valid oboe configuration, then you
   press `C-c C-c` for commiting, a new oboe buffer will be created.
+
+## Integration
+Since buffer management is a very common task, `oboe` can naturally
+integrate (or be integrated) with other packages. Here are some
+examples:
+
+### popwin
+
+Simply set `oboe-default-display-method` to `popwin:popup-buffer`.
+
+### ibuffer
+
+``` emacs-lisp
+(defun ibuffer-oboe-absorb ()
+  "Absorb marked buffers into an OBOE temporary buffer."
+  (interactive)
+  (oboe-absorb (ibuffer-get-marked-buffers)))
+
+(with-eval-after-load 'ibuffer
+  (keymap-set ibuffer-mode-map "a" #'ibuffer-oboe-absorb))
+```
+
+This is useful when you want to create a temporary view of marked
+buffers.  `ibuffer` provides various filtering functions so it will be
+very enjoyable to have this function added.  You may add some logic
+for sorting buffers after `ibuffer-get-marked-buffers`.
+
+### centaur-tabs
+`centaur-tabs` has a new tab button, which is bound to a tab creation
+function. You can replace that function with `oboe-new`, or, more
+generally, add a right-click menu.
+
+``` emacs-lisp
+(easy-menu-define oboe-new-tab nil
+  "Serve `oboe-new' for creating new tabs in centaur."
+  (cons "Create new tab."
+        (mapcan (lambda (item)
+                  (let* ((sym (car item))
+                         (s (symbol-name sym))
+                         ;; copy each config for ease to tweak
+                         (l (append '(:name) item nil)))
+                    `([,s ,l])))
+                oboe-config-alist)))
+
+(defun oboe-new-tab--button (event)
+  (interactive "e")
+  (select-window (posn-window (event-start event)))
+  (apply #'oboe-new (oboe-new-tab event)))
+
+;; bind it to right down click event:
+(define-key centaur-tabs-new-tab-map
+            (vector centaur-tabs-display-line 'down-mouse-3)
+            'oboe-new-tab--button)
+```
+
+You may filter out configurations you don't want to see in menu by
+modifying that `mapcan` clause.

@@ -3,7 +3,7 @@
 A simple Emacs temporary buffer management framework.
 
 ## About
-Emacs has *scratch* buffer for temporary elisp scripting.  However,
+Emacs has `*scratch*` buffer for temporary elisp scripting.  However,
 sometimes you may want to get a temporary buffer with some other
 specific configuration to do something immediately.  That is not
 something difficult to do but usually diversed in various packages and
@@ -16,7 +16,7 @@ The idea of oboe.el is just as simple as following steps:
 2. create a buffer and load selected configuration
 3. display it according to configuration
 
-The idea looks like a trival version of org-capture, but they have
+The idea looks like a trival version of `org-capture`, but they have
 different target.  oboe is designed as a temporary buffer management
 framework.  It will track created oboe buffers in queues, assigning
 each new buffer with a unique ID.  You can manage all these buffers in
@@ -48,10 +48,10 @@ Now oboe is also available on MELPA, you can install it with
 Currently we have these commands:
 - `oboe-new` creates a new temporary buffer.
 - `oboe-recall` brings back a temporary buffer.
-- `oboe-absorb` absorbs content from multiple buffers.
+- `oboe-lift` lifts content from multiple buffers.
 - `oboe-menu` filters out temporary buffers in a buffer menu.
 - `oboe-pipe` creates a new temporary buffer then apply a command on it.
-- `oboe-blow` absorbs selected region and send it to an oboe pipe.
+- `oboe-blow` lifts content from current buffer to an oboe pipe, then project it back.
 
 See their docstring for more information.
 
@@ -129,19 +129,28 @@ I have implemented these keys:
 - `:init-content` : A string to be inserted into the buffer.  It can
   also be a function that returns a string.
 
-- `:return` : A function to extract a value from current buffer to be
-  provided for other usages.  For example, a `oboe-pipe`.
+- `:lift` : A function to extract text from a given buffer, used by
+  `oboe-lift`.  By default it simply capture the selected region.
+  This function can be arbitrary reader which reads in a structure and
+  inserts its text representation to current buffer.  Its default
+  value is `oboe-default-lift-method`.
+
+- `:project` : A function to extract a value from current buffer, used
+  by `oboe-pipe`.  By default it uses `list`.
 
   ``` emacs-lisp
   ;; how `oboe-pipe' works
   (apply (read-command)            ;; => 1. select cmd ===> 4. call cmd
-         (funcall (plist-get config :return)          ;; => 3. convert format 
+         (funcall (plist-get config :project)         ;; => 3. convert format
                   (get-buffer *temporary buffer<X>*)  ;; => 2. edit tmp buffer
                   ))
   ```
-  
+
   You can think this method as the `return` monad for lifting the
   input `x` to `(f x)` so that we can `(apply #'cmd (f x))`.
+
+  Note that both `:lift` and `:project` may introduce side effects,
+  that is how we implemented `oboe-blow`.
 
 - `:revive` : A function to find and display a buried buffer with
   given config.  This function works on a specific buffer config
@@ -169,14 +178,20 @@ and stupid.
 Be aware that `plist-get` may return `nil`, `oboe-use` won't check it
 for your function, so your function should be able to check them.
 
-Actually there was a prototype in CL style.  But I just found that,
-that one was not simpler, so I just abandoned CL and chose plists.
+Actually there was a prototype based on `cl-lib`.  But I just found
+that, that one was not simpler, so I just abandoned CL classes and
+chose plists.  This is because CL's reader and printer works on
+objects rather than buffers.  Buffer is the true object of Emacs.
 
 ## Hints
 
 `oboe.el` can be more powerful than you can imagine, because it is a
 framework that helps constructing visible buffer-based workflow.  It
 is a way to think rather than a method to implement.
+
+- Manage buffers that are not created by `oboe-new`: You may associate
+  it with an empty oboe config with `oboe-register-buffer`, then you
+  can manage it with `oboe-menu` and `oboe-recall`.
 
 - Register buffer: Since buffer is the unit of data in Emacs, you can
   save any configurations into an oboe buffer by customizing `:major`
@@ -195,11 +210,11 @@ is a way to think rather than a method to implement.
   configuration to `oboe-config-alist`.  In this case, you can simply
   provide `oboe-new` with a full plist with `:name` as configuration,
   e. g.
-  
+
   ```emacs-lisp
   (oboe-new '(:name myconfig :major my-initialization-func))
   ```
-  
+
   `myconfig` here can still be used for buffer filtering in
   `oboe-menu`, but it will not appear in completion.
 
@@ -219,7 +234,7 @@ is a way to think rather than a method to implement.
   ```
 
   Here, `my-init-with` will initialize the new oboe buffer with
-  information from `buf`.  You can simply type 
+  information from `buf`.  You can simply type
   `M-x oboe-pipe RET my-oboe-chain RET my-epc-head RET` to start.
 
   When the pipe returns, it will create a new oboe pipe which
@@ -231,7 +246,7 @@ is a way to think rather than a method to implement.
   memory).
 
 - Side pipe: You don't have to apply commands with argument, for
-  example, you may set the `:return` method of your oboe buffer to
+  example, you may set the `:lift` method of your oboe buffer to
   `(lambda (buf) nil)`, which always return `nil`, then you can apply
   a command that does not need an argument as the bellend.  The
   bellend command is always runned in the context buffer.
@@ -239,16 +254,42 @@ is a way to think rather than a method to implement.
 - Oboe in oboe: You can even write oboe configuration in an oboe
   buffer, then create an oboe buffer according to the configuration
   with `oboe-blow` or `oboe-pipe`, the bellend function is simple:
-  
+
   ```emacs-lisp
   (defun oboe-new-read (buf)
     (interactive "Bbuffer: ")
     (oboe-new (read buf)))
   ```
-  
+
   You can simply type `M-x oboe-pipe RET oboe-new-read RET elisp RET`,
   then you write a plist which is a valid oboe configuration, then you
   press `C-c C-c` for commiting, a new oboe buffer will be created.
+
+  If you want to tweak an existing config, you can achieve this with
+  an oboe pipe with simple `:lift` and `:project` methods:
+
+  ```emacs-lisp
+  (defun oboe-new-tweak (config)
+    (interactive
+     (list (oboe-read-config
+            "Create a temporary buffer with tweaked config: ")))
+    (oboe-pipe #'oboe-new
+               '(:name elisp :major emacs-lisp-mode
+                 :lift (lambda (buf) (pp config buf))
+                 :project (lambda (buf) (list (read buf))))))
+  ```
+
+  In this manner, you can also edit the value of arbitrary variable:
+
+  ```emacs-lisp
+  (defun oboe-setf (var)
+    "VAR can be any sexp that can be accepted by `setf'."
+    (interactive "xEdit variable: ")
+    (oboe-pipe (lambda (value) (eval `(setf ,var ,value)))
+               '(:name elisp :major emacs-lisp-mode
+                 :lift (lambda (buf) (pp var buf))
+                 :project (lambda (buf) (list (read buf))))))
+  ```
 
 ## Integration
 Since buffer management is a very common task, `oboe` can naturally
@@ -265,7 +306,7 @@ Simply set `oboe-default-display-method` to `popwin:popup-buffer`.
 (defun ibuffer-oboe-absorb ()
   "Absorb marked buffers into an OBOE temporary buffer."
   (interactive)
-  (oboe-absorb (ibuffer-get-marked-buffers)))
+  (oboe-lift (ibuffer-get-marked-buffers)))
 
 (with-eval-after-load 'ibuffer
   (keymap-set ibuffer-mode-map "a" #'ibuffer-oboe-absorb))

@@ -2,7 +2,7 @@
 
 ;; Author: gynamics
 ;; Maintainer: gynamics <gynamics@coldbench.top>
-;; Package-Version: 1.0
+;; Package-Version: 2.0
 ;; Package-Requires: ((emacs "30.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
@@ -135,14 +135,20 @@ order of minor-mode calls is determined by `mapc'.
 :init-content : A string to be inserted into the buffer.  It may be a
 function that returns a string as well.
 
-:revive : A function to find and display a buried buffer with
-given config.  This function works on a specific buffer config
-rather than a specific buffer, so you can choose which buffer to
-revive, even concat all existing buffers.  Its default value is
+:revive : A function to find and display a buried buffer with given
+config.  This function works on a specific buffer config rather than a
+specific buffer, so you can choose which buffer to revive, even concat
+all existing buffers.  Its default value is
 `oboe-default-revive-method'.
 
-:return : A function to extract a value from current buffer to
-be provided for other usages.  For example, a `oboe-pipe'.
+:lift : A function to extract text from a given buffer, used by
+`oboe-lift'.  By default it simply capture the selected region.  This
+function can be arbitrary reader which reads in a structure and inserts
+its text representation to current buffer.  Its default value is
+`oboe-default-lift-method'.
+
+:project : A function to extract a value from current buffer, used by
+`oboe-pipe'.  By default it uses `list'.
 
 These keys are just fine to construct a simple preset to make the
 whole system work.  You may extend this with your own loader
@@ -258,6 +264,7 @@ Theoretically it won't overflow for normal usage."
                       oboe-default-create-method))
          (buf (funcall creator config)))
     (with-current-buffer buf
+      (setq-local kill-buffer-hook kill-buffer-hook)
       (add-hook 'kill-buffer-hook
                 (lambda () (oboe-unregister-buffer (current-buffer))))
       (when (and oboe-delete-temp-file-on-kill
@@ -357,43 +364,39 @@ be a symbol for the config name registed in `oboe-config-alist'."
             (cons :name config)
           (error "Unknown config name %s" config)))))
 
-(defcustom oboe-default-absorb-method
-  'insert-buffer-substring
-  "How `oboe-absorb' insert captured text to created buffer.
-It should have the same arguments with `insert-buffer-substring'"
+(defcustom oboe-default-lift-method
+  (lambda (buf)
+    (apply #'insert-buffer-substring
+           (cons buf (with-current-buffer buf
+                       (when (use-region-p)
+                         (list (region-beginning) (region-end)))))))
+  "How `oboe-lift' insert captured text to created buffer.
+It should have the same parameters with the default one."
   :type 'function
   :group 'oboe)
 
 ;;;###autoload
-(defun oboe-absorb (buffers &optional region-only config)
-  "Absorb selected BUFFERS into a temporary buffer.
-
-If prefix argument as REGION-ONLY is given, only absorb active regions
-in selected buffers.
+(defun oboe-lift (buffers &optional config)
+  "Lift selected BUFFERS into a temporary buffer.
 
 If CONFIG is given, do not prompt for config name.  CONFIG can be either
 a symbol which is a valid key in `oboe-config-alist', or a plist.
 
-P. S.  You can absorb on one buffer for multiple times."
+P. S.  You can lift on one buffer for multiple times."
   (interactive
    (list
     (mapcar
      #'get-buffer
      (completing-read-multiple
-      "Absorb buffer(s): "
-      (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))
-    current-prefix-arg))
+      "Lift buffer(s): "
+      (mapcar (lambda (buf) (buffer-name buf)) (buffer-list))))))
   (let ((buf (if config
                  (oboe-new config)
-               (call-interactively #'oboe-new))))
+               (call-interactively #'oboe-new)))
+        (lift (or (plist-get config :lift)
+                  oboe-default-lift-method)))
     (dolist (in buffers)
-      (let ((args (cons in (when region-only
-                             (with-current-buffer in
-                               (if (use-region-p)
-                                   (list (region-beginning) (region-end))
-                                 (list (point) (point))))))))
-        (with-current-buffer buf
-          (apply oboe-default-absorb-method args))))
+      (with-current-buffer buf (funcall lift in)))
     (oboe-display-buffer buf)
     buf))
 
@@ -432,19 +435,17 @@ If prefix argument is given, prompt for CONFIG-NAMES."
   :type 'key-sequence
   :group 'oboe)
 
-(defun oboe-pipe-commit (command ctxt-buf pipe-buf)
+(defun oboe-pipe-commit (command ctxt-buf pipe-buf config)
   "Commit PIPE-BUF to COMMAND to be called in CTXT-BUF.
-PIPE-BUF should be an oboe buffer."
-  (let* ((class (gethash pipe-buf oboe--buffers))
-         (config (alist-get class oboe-config-alist))
-         (arg (funcall (or (plist-get config :return) #'list) pipe-buf)))
+PIPE-BUF should be an oboe buffer, CONFIG is its configuration."
+  (let ((project (or (plist-get config :project) #'list)))
     (with-current-buffer ctxt-buf
-      (apply command arg)))
+      (apply command (funcall project pipe-buf))))
   (kill-buffer pipe-buf))
 
-(defun oboe-pipe-setup (command ctxt-buf pipe-buf)
+(defun oboe-pipe-setup (command ctxt-buf pipe-buf config)
   "Set up keybindings in PIPE-BUF for a oboe pipe.
-CTXT-BUF, PIPE-BUF and COMMAND are provided to `oboe-pipe-commit'."
+CTXT-BUF, PIPE-BUF, COMMAND and CONFIG are provided to `oboe-pipe-commit'."
   (with-current-buffer pipe-buf
     (setq-local header-line-format
                 (concat
@@ -456,7 +457,7 @@ CTXT-BUF, PIPE-BUF and COMMAND are provided to `oboe-pipe-commit'."
     (keymap-local-set oboe-pipe-commit-keybinding
                       (lambda ()
                         (interactive)
-                        (oboe-pipe-commit command ctxt-buf pipe-buf)))
+                        (oboe-pipe-commit command ctxt-buf pipe-buf config)))
     (keymap-local-set oboe-pipe-abort-keybinding
                       (lambda ()
                         (interactive)
@@ -478,41 +479,76 @@ CONFIG is provided to `oboe-new'."
   (interactive
    (list (read-command "Command: " #'ignore)
          (oboe-read-config "Oboe config: ")))
-  (oboe-pipe-setup command (current-buffer) (oboe-new config)))
+  (oboe-pipe-setup command (current-buffer) (oboe-new config) config))
 
-(defun oboe-replace-region (buf)
-  "Replace active region with content in BUF."
-  (when (region-active-p)
-    (delete-region (region-beginning) (region-end)))
-  (insert-buffer-substring buf))
+(defun oboe-blow-capture-region (buf)
+  "Capture selected region in BUF, return (beginning end)."
+  (with-current-buffer buf
+    (if (use-region-p)
+        (list (region-beginning) (region-end))
+      (list (point-min) (point-max)))))
 
-(defcustom oboe-blow-default-bellend
-  #'oboe-replace-region
-  "Default command used by `oboe-pipe-commit' in `oboe-blow'.
-This function will be called with current buffer as ctxt-buf."
-  :type 'function
-  :group 'oboe)
+(defun oboe-blow-lift (buf)
+  "Guard and record region in buffer BUF."
+  (let ((key (current-buffer))
+        (region (oboe-blow-capture-region buf))
+        (props '(read-only t)))
+    (apply #'insert-buffer-substring buf region)
+    (with-current-buffer buf
+      (defvar oboe-blow--lifted-ovs nil)
+      (let ((ov (apply #'make-overlay region)))
+        (overlay-put ov 'face 'region)
+        (setf (alist-get key oboe-blow--lifted-ovs) ov)
+        (with-silent-modifications
+          (apply #'add-text-properties (append region (list props))))))
+    (setq-local kill-buffer-hook kill-buffer-hook)
+    (add-hook
+     'kill-buffer-hook
+     (lambda ()
+       (with-current-buffer buf
+         (let ((ov (alist-get key oboe-blow--lifted-ovs)))
+           (let ((start (overlay-start ov))
+                 (end (overlay-end ov))
+                 (inhibit-read-only t))
+             (with-silent-modifications
+               (remove-text-properties start end props))
+             (delete-overlay ov)
+             (setq oboe-blow--lifted-ovs
+                   (mapcan (lambda (kv) (when (buffer-live-p (car kv)) (list kv)))
+                           oboe-blow--lifted-ovs)))))))))
+
+(defun oboe-blow-project (buf)
+  "Replace lifted region in current buffer with content of BUF."
+  (when-let* ((ovs (buffer-local-value
+                    'oboe-blow--lifted-ovs (current-buffer)))
+              (ov (alist-get buf ovs)))
+    (let ((inhibit-read-only t)
+          (saved-point (point))
+          (start (overlay-start ov)))
+      (delete-region start (overlay-end ov))
+      (goto-char start)
+      (insert-buffer-substring buf)
+      (goto-char saved-point)
+      (list buf))))
 
 ;;;###autoload
 (defun oboe-blow (command config)
-  "Capture selected region and absorb it into a oboe pipe.
+  "Lift content in current buffer to an oboe pipe then project it back.
 
 If prefix argument is given, prompt for COMMAND.  Otherwise use
-`oboe-blow-default-bellend', which replaces selected region with buffer
+`oboe-blow-project-region', which replaces selected region with buffer
 content.
 
 If double `C-u' prefix is given, prompt for CONFIG which will be passed
-to `oboe-absorb'.  Otherwise simply use the major mode of parent buffer."
+to `oboe-lift'.  Otherwise simply use the major mode of parent buffer."
   (interactive
    (list
-    (if current-prefix-arg
-        (read-command "Command: " oboe-blow-default-bellend)
-      oboe-blow-default-bellend)
+    (if current-prefix-arg (read-command "Command: " 'ignore) 'ignore)
     (unless (and current-prefix-arg
                  (>= (car current-prefix-arg) 16))
-      `(:name blow :major ,major-mode))))
-  (oboe-pipe-setup command (current-buffer)
-                   (oboe-absorb (list (current-buffer)) t config)))
+      `(:name blow :major ,major-mode :lift oboe-blow-lift :project oboe-blow-project))))
+  (let ((ctxt (current-buffer)))
+    (oboe-pipe-setup command ctxt (oboe-lift (list ctxt) config) config)))
 
 (provide 'oboe)
 ;;; oboe.el ends here

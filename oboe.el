@@ -264,16 +264,16 @@ Theoretically it won't overflow for normal usage."
                       oboe-default-create-method))
          (buf (funcall creator config)))
     (with-current-buffer buf
-      (setq-local kill-buffer-hook kill-buffer-hook)
       (add-hook 'kill-buffer-hook
-                (lambda () (oboe-unregister-buffer (current-buffer))))
+                (lambda () (oboe-unregister-buffer (current-buffer)))
+                0 t)
       (when (and oboe-delete-temp-file-on-kill
                  (and-let* ((path (plist-get config :assoc-file)))
                    (file-directory-p path)))
         (add-hook 'kill-buffer-hook
-                  (lambda () (delete-file (buffer-file-name))))
-        (make-local-variable 'kill-buffer-query-functions)
-        (setq kill-buffer-query-functions nil))
+                  (lambda () (delete-file (buffer-file-name)))
+                  0 t)
+        (setq-local kill-buffer-query-functions nil))
       (oboe-register-buffer config buf)
       (oboe-load config buf))))
 
@@ -501,7 +501,6 @@ CONFIG is provided to `oboe-new'."
         (setf (alist-get key oboe-blow--lifted-ovs) ov)
         (with-silent-modifications
           (apply #'add-text-properties (append region (list props))))))
-    (setq-local kill-buffer-hook kill-buffer-hook)
     (add-hook
      'kill-buffer-hook
      (lambda ()
@@ -515,7 +514,8 @@ CONFIG is provided to `oboe-new'."
              (delete-overlay ov)
              (setq oboe-blow--lifted-ovs
                    (mapcan (lambda (kv) (when (buffer-live-p (car kv)) (list kv)))
-                           oboe-blow--lifted-ovs)))))))))
+                           oboe-blow--lifted-ovs))))))
+     0 t)))
 
 (defun oboe-blow-project (buf)
   "Replace lifted region in current buffer with content of BUF."

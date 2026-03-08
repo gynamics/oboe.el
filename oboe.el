@@ -523,12 +523,11 @@ CONFIG is provided to `oboe-new'."
                     'oboe-blow--lifted-ovs (current-buffer)))
               (ov (alist-get buf ovs)))
     (let ((inhibit-read-only t)
-          (saved-point (point))
           (start (overlay-start ov)))
       (delete-region start (overlay-end ov))
-      (goto-char start)
-      (insert-buffer-substring buf)
-      (goto-char saved-point)
+      (save-excursion
+        (goto-char start)
+        (insert-buffer-substring buf))
       (list buf))))
 
 ;;;###autoload

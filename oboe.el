@@ -2,7 +2,7 @@
 
 ;; Author: gynamics
 ;; Maintainer: gynamics <gynamics@coldbench.top>
-;; Package-Version: 2.0
+;; Package-Version: 2.1
 ;; Package-Requires: ((emacs "30.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
@@ -488,12 +488,15 @@ CONFIG is provided to `oboe-new'."
         (list (region-beginning) (region-end))
       (list (point-min) (point-max)))))
 
-(defun oboe-blow-lift (buf)
-  "Guard and record region in buffer BUF."
+(defun oboe-blow-lift (buf &optional lifter)
+  "Guard and record region in buffer BUF.
+An optional LIFTER may be provided for transforming text, it should has
+the same function prototype as `insert-buffer-substring'."
   (let ((key (current-buffer))
         (region (oboe-blow-capture-region buf))
-        (props '(read-only t)))
-    (apply #'insert-buffer-substring buf region)
+        (props '(read-only t))
+        (lifter (or lifter 'insert-buffer-substring)))
+    (apply lifter buf region)
     (with-current-buffer buf
       (defvar oboe-blow--lifted-ovs nil)
       (let ((ov (apply #'make-overlay region)))
@@ -517,34 +520,37 @@ CONFIG is provided to `oboe-new'."
                            oboe-blow--lifted-ovs))))))
      0 t)))
 
-(defun oboe-blow-project (buf)
-  "Replace lifted region in current buffer with content of BUF."
+(defun oboe-blow-project (buf &optional projecter)
+  "Replace lifted region in current buffer with content of BUF.
+An optional PROJECTER may be provided for transforming text, it should
+has the same function prototype as `insert-buffer'"
   (when-let* ((ovs (buffer-local-value
                     'oboe-blow--lifted-ovs (current-buffer)))
               (ov (alist-get buf ovs)))
     (let ((inhibit-read-only t)
-          (start (overlay-start ov)))
+          (start (overlay-start ov))
+          (projecter (or projecter 'insert-buffer)))
       (delete-region start (overlay-end ov))
       (save-excursion
         (goto-char start)
-        (insert-buffer-substring buf))
+        (funcall projecter buf))
       (list buf))))
 
 ;;;###autoload
 (defun oboe-blow (command config)
   "Lift content in current buffer to an oboe pipe then project it back.
 
-If prefix argument is given, prompt for COMMAND.  Otherwise use
-`oboe-blow-project-region', which replaces selected region with buffer
-content.
+If prefix argument is given, prompt for CONFIG which will be passed to
+`oboe-lift'.  Otherwise simply use the major mode of parent buffer.
 
-If double `C-u' prefix is given, prompt for CONFIG which will be passed
-to `oboe-lift'.  Otherwise simply use the major mode of parent buffer."
+If double `C-u' prefix is given, prompt for COMMAND, default `ignore'."
   (interactive
    (list
-    (if current-prefix-arg (read-command "Command: " 'ignore) 'ignore)
-    (unless (and current-prefix-arg
-                 (>= (car current-prefix-arg) 16))
+    (if (and current-prefix-arg
+             (>= (car current-prefix-arg) 16))
+        (read-command "Command: " 'ignore)
+      'ignore)
+    (unless current-prefix-arg
       `(:name blow :major ,major-mode :lift oboe-blow-lift :project oboe-blow-project))))
   (let ((ctxt (current-buffer)))
     (oboe-pipe-setup command ctxt (oboe-lift (list ctxt) config) config)))

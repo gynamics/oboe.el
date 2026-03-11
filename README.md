@@ -291,6 +291,30 @@ is a way to think rather than a method to implement.
                  :project (lambda (buf) (list (read buf))))))
   ```
 
+- Extend `oboe-blow` like `edit-indirect.el`: With `C-u` prefix you
+  can prompt for a specific configuration for `oboe-blow`.  Since the
+  basic logic of `oboe-blow` is built on `oboe-pipe`, you can write
+  your own configuration for it by wrapping `oboe-blow-lift` and
+  `oboe-blow-project`
+
+  ```emacs-lisp
+  (defun my-lifter (buf &optional bgn end)
+    (let ((text (with-current-buffer buf
+                  (buffer-substring bgn end))))
+      (insert (transform text))))
+
+  (defun my-projecter (buf)
+    (let ((text (with-current-buffer buf
+                  (buffer-substring (point-min) (point-max)))))
+      (insert (transform-1 text))))
+
+  (oboe-blow
+   'ignore
+   '(:name my-config :major my-major-mode
+     :lift (lambda (buf) (oboe-blow-lift buf my-lifter))
+     :project (lambda (buf) (oboe-blow-project buf my-projecter))))
+  ```
+
 ## Integration
 Since buffer management is a very common task, `oboe` can naturally
 integrate (or be integrated) with other packages. Here are some

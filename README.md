@@ -57,6 +57,18 @@ Currently we have these commands:
 
 See their docstring for more information.
 
+`oboe-blow` can be thought as a simple implementation of
+[edit-indirect.el](https://github.com/Fanael/edit-indirect), the main
+differences are:
+
+- `edit-indirect` use `edit-indirect-guess-mode-function` for guessing the major
+  mode for indirect edit, `oboe-blow` don't have such a guess function, but
+  allow you to select oboe config interactively with a `C-u` prefix.
+- `oboe-blow` is built on `oboe-pipe`, which support flitering after edition and
+  recursive context. You can blow upon blow, all contexts are recorded by
+  buffers.  You can even print a backtrace or buffer tree by doing an DFS on
+  `oboe-blow--lifted-ovs`, which is an alist of `(lifted-buffer . overlay)`.
+
 ## Customization
 
 This simple framework is designed to be tweaked easily.  The basic

@@ -2,7 +2,7 @@
 
 ;; Author: gynamics
 ;; Maintainer: gynamics <gynamics@coldbench.top>
-;; Package-Version: 2.1
+;; Package-Version: 2.2
 ;; Package-Requires: ((emacs "30.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
@@ -421,12 +421,12 @@ If prefix argument is given, prompt for CONFIG-NAMES."
               (or config-names (hash-table-keys oboe--classes)))))))
 
 (defcustom oboe-pipe-commit-keybinding "C-c C-c"
-  "Default keybinding for \\[oboe-pipe-commit] in an oboe pipe."
+  "Default keybinding for `oboe-pipe-commit' in an oboe pipe."
   :type 'key-sequence
   :group 'oboe)
 
 (defcustom oboe-pipe-abort-keybinding "C-c C-k"
-  "Default keybinding for \\[kill-buffer] in an oboe pipe."
+  "Default keybinding for `kill-buffer' in an oboe pipe."
   :type 'key-sequence
   :group 'oboe)
 
@@ -494,30 +494,38 @@ An optional LIFTER may be provided for transforming text, it should has
 the same function prototype as `insert-buffer-substring'."
   (let ((key (current-buffer))
         (region (oboe-blow-capture-region buf))
-        (props '(read-only t))
+        (props '(read-only t rear-nonsticky t))
         (lifter (or lifter 'insert-buffer-substring)))
     (apply lifter buf region)
     (with-current-buffer buf
       (defvar oboe-blow--lifted-ovs nil)
-      (let ((ov (apply #'make-overlay region)))
+      (let ((ov (apply #'make-overlay (append region (list nil t)))))
         (overlay-put ov 'face 'region)
+        (overlay-put ov 'keymap
+                     (let ((keymap (make-sparse-keymap))
+                           (f (lambda ()
+                                (interactive)
+                                (oboe-display-buffer key))))
+                       (keymap-set keymap "RET" f)
+                       (keymap-set keymap "<mouse-1>" f)
+                       keymap))
         (setf (alist-get key oboe-blow--lifted-ovs) ov)
         (with-silent-modifications
           (apply #'add-text-properties (append region (list props))))))
     (add-hook
      'kill-buffer-hook
      (lambda ()
-       (with-current-buffer buf
-         (let ((ov (alist-get key oboe-blow--lifted-ovs)))
-           (let ((start (overlay-start ov))
-                 (end (overlay-end ov))
-                 (inhibit-read-only t))
-             (with-silent-modifications
-               (remove-text-properties start end props))
-             (delete-overlay ov)
-             (setq oboe-blow--lifted-ovs
-                   (mapcan (lambda (kv) (when (buffer-live-p (car kv)) (list kv)))
-                           oboe-blow--lifted-ovs))))))
+       (when (buffer-live-p buf)
+         (with-current-buffer buf
+           (let ((ov (alist-get key oboe-blow--lifted-ovs)))
+             (let ((start (overlay-start ov))
+                   (end (overlay-end ov))
+                   (inhibit-read-only t))
+               (with-silent-modifications
+                 (remove-text-properties start end props))
+               (delete-overlay ov)
+               (setq oboe-blow--lifted-ovs
+                     (assq-delete-all key oboe-blow--lifted-ovs)))))))
      0 t)))
 
 (defun oboe-blow-project (buf &optional projecter)

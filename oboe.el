@@ -2,7 +2,7 @@
 
 ;; Author: gynamics
 ;; Maintainer: gynamics <gynamics@coldbench.top>
-;; Package-Version: 2.2
+;; Package-Version: 2.3
 ;; Package-Requires: ((emacs "30.1"))
 ;; URL: https://github.com/gynamics/oboe.el
 ;; Keywords: convenience
@@ -465,7 +465,8 @@ CTXT-BUF, PIPE-BUF, COMMAND and CONFIG are provided to `oboe-pipe-commit'."
     (keymap-local-set oboe-pipe-reset-keybinding
                       (lambda (new-cmd)
                         (interactive "CReselect command: ")
-                        (setq command new-cmd)))))
+                        (setq command new-cmd)))
+    pipe-buf))
 
 ;;;###autoload
 (defun oboe-pipe (command config)
@@ -486,7 +487,7 @@ CONFIG is provided to `oboe-new'."
   (with-current-buffer buf
     (if (use-region-p)
         (list (region-beginning) (region-end))
-      (list (point-min) (point-max)))))
+      (list (point) (point)))))
 
 (defun oboe-blow-lift (buf &optional lifter)
   "Guard and record region in buffer BUF.
@@ -499,7 +500,7 @@ the same function prototype as `insert-buffer-substring'."
     (apply lifter buf region)
     (with-current-buffer buf
       (defvar oboe-blow--lifted-ovs nil)
-      (let ((ov (apply #'make-overlay (append region (list nil t)))))
+      (when-let* ((ov (apply #'make-overlay (append region (list nil t)))))
         (overlay-put ov 'face 'region)
         (overlay-put ov 'keymap
                      (let ((keymap (make-sparse-keymap))
@@ -517,12 +518,13 @@ the same function prototype as `insert-buffer-substring'."
      (lambda ()
        (when (buffer-live-p buf)
          (with-current-buffer buf
-           (let ((ov (alist-get key oboe-blow--lifted-ovs)))
+           (when-let* ((ov (alist-get key oboe-blow--lifted-ovs)))
              (let ((start (overlay-start ov))
                    (end (overlay-end ov))
                    (inhibit-read-only t))
-               (with-silent-modifications
-                 (remove-text-properties start end props))
+               (when (buffer-live-p (overlay-buffer ov))
+                 (with-silent-modifications
+                   (remove-text-properties start end props)))
                (delete-overlay ov)
                (setq oboe-blow--lifted-ovs
                      (assq-delete-all key oboe-blow--lifted-ovs)))))))

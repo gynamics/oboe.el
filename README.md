@@ -166,6 +166,17 @@ I have implemented these keys:
   Note that both `:lift` and `:project` may introduce side effects,
   that is how we implemented `oboe-blow`.
 
+  ``` text
+                         edit
+                 TEXT ----------> TEXT'
+                   ^               /
+             lift /               / project
+                 /     blow      v
+              OBJECT -~~~~~-> OBJECT'
+
+        blow = lift . edit . project
+  ```
+
 - `:revive` : A function to find and display a buried buffer with
   given config.  This function works on a specific buffer config
   rather than a specific buffer, so you can choose which buffer to
@@ -335,10 +346,10 @@ integrate (or be integrated) with other packages. Here are some
 examples:
 
 ### popwin
-
-Simply set `oboe-default-display-method` to `popwin:popup-buffer`.
+Simply set `oboe-default-display-method` to `display-buffer`.
 
 ### ibuffer
+You can use ibuffer menu to select buffers for `oboe-lift`.
 
 ``` emacs-lisp
 (defun ibuffer-oboe-absorb ()
@@ -385,3 +396,21 @@ generally, add a right-click menu.
 
 You may filter out configurations you don't want to see in menu by
 modifying that `mapcan` clause.
+
+### consult
+`consult` provides a powerful UI, but most consult buffers are intermediate,
+they only lives during interaction.  With `oboe-lift` you can make them
+consistent to accumulate your work, with `oboe-pipe` you can collect the output
+and pipe them to another IO command with little code. For example:
+
+``` emacs-lisp
+(defun consult-line-lift ()
+  (interactive)
+  (with-current-buffer (call-interactively 'oboe-lift)
+    (call-interactively 'consult-keep-lines)))
+
+(defun consult-line-pipe ()
+  (interactive)
+  (with-current-buffer (call-interactively 'oboe-pipe)
+    (call-interactively 'consult-keep-lines)))
+```

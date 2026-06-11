@@ -340,6 +340,24 @@ is a way to think rather than a method to implement.
      :project (lambda (buf) (oboe-blow-project buf my-projecter))))
   ```
 
+  Another example for indirect edit minibuffer:
+
+  ``` emacs-lisp
+  (defun minibuffer-oboe-blow ()
+    "Blow the minibuffer to an oboe buffer."
+    (interactive)
+    (letrec ((buf (call-interactively 'oboe-blow)))
+      (letrec ((f (lambda ()
+                    (kill-buffer buf)
+                    (remove-hook 'minibuffer-exit-hook f))))
+        (add-hook 'minibuffer-exit-hook 'f))
+      (select-window (get-buffer-window buf))
+      (with-current-buffer buf
+        (add-hook 'kill-buffer-hook
+                  (lambda () (select-window (minibuffer-window)))
+                  nil t)))
+  ```
+
 ## Integration
 Since buffer management is a very common task, `oboe` can naturally
 integrate (or be integrated) with other packages. Here are some
